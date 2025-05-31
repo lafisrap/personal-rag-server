@@ -2,8 +2,15 @@
 fastapi>=0.100.0
 uvicorn>=0.23.0
 pydantic>=2.0.0
+pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
 python-multipart>=0.0.6
+
+# Security packages
+python-jose[cryptography]>=3.3.0  # JWT token handling
+passlib[bcrypt]>=1.7.4  # Password hashing
+python-multipart>=0.0.6  # For form data handling
+slowapi>=0.1.8  # Rate limiting for FastAPI
 
 # Database
 pymongo>=4.4.0

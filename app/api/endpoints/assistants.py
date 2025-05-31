@@ -6,6 +6,8 @@ from app.models.assistant import (
     AssistantUpdate,
     AssistantDelete
 )
+from app.models.user import TokenData, Permission
+from app.core.security import require_permission, get_current_user
 from app.db.mongodb import mongodb
 from typing import Optional, List
 from datetime import datetime
@@ -15,7 +17,10 @@ router = APIRouter()
 
 
 @router.post("", response_model=AssistantResponse)
-async def create_assistant(assistant: AssistantCreate):
+async def create_assistant(
+    assistant: AssistantCreate,
+    current_user: TokenData = Depends(require_permission(Permission.WRITE_CONVERSATIONS))
+):
     """Create a new assistant."""
     try:
         assistant_id = str(uuid.uuid4())
@@ -29,6 +34,7 @@ async def create_assistant(assistant: AssistantCreate):
             "model": assistant.model,
             "tools": assistant.tools,
             "metadata": assistant.metadata,
+            "created_by": current_user.user_id,
             "created_at": now,
             "modified_at": now
         }
@@ -45,12 +51,16 @@ async def list_assistants(
     limit: int = Query(20, ge=1, le=100),
     order: str = Query("desc", regex="^(asc|desc)$"),
     after: Optional[str] = Query(None),
-    before: Optional[str] = Query(None)
+    before: Optional[str] = Query(None),
+    current_user: TokenData = Depends(require_permission(Permission.READ_CONVERSATIONS))
 ):
     """List assistants."""
     try:
-        # Build query
+        # Build query - users can only see their own assistants unless they're admin
         query = {}
+        if Permission.ADMIN_SYSTEM not in current_user.permissions:
+            query["created_by"] = current_user.user_id
+            
         if after:
             query["assistant_id"] = {"$gt": after} if order == "asc" else {"$lt": after}
         elif before:
@@ -84,10 +94,18 @@ async def list_assistants(
 
 
 @router.get("/{assistant_id}", response_model=AssistantResponse)
-async def get_assistant(assistant_id: str):
+async def get_assistant(
+    assistant_id: str,
+    current_user: TokenData = Depends(require_permission(Permission.READ_CONVERSATIONS))
+):
     """Get an assistant by ID."""
     try:
-        assistant = await mongodb.get_assistants_collection().find_one({"assistant_id": assistant_id})
+        # Build query to ensure user can only access their own assistants (unless admin)
+        query = {"assistant_id": assistant_id}
+        if Permission.ADMIN_SYSTEM not in current_user.permissions:
+            query["created_by"] = current_user.user_id
+            
+        assistant = await mongodb.get_assistants_collection().find_one(query)
         
         if not assistant:
             raise HTTPException(status_code=404, detail="Assistant not found")
@@ -100,17 +118,27 @@ async def get_assistant(assistant_id: str):
 
 
 @router.post("/{assistant_id}", response_model=AssistantResponse)
-async def update_assistant(assistant_id: str, assistant_update: AssistantUpdate):
+async def update_assistant(
+    assistant_id: str, 
+    assistant_update: AssistantUpdate,
+    current_user: TokenData = Depends(require_permission(Permission.WRITE_CONVERSATIONS))
+):
     """Update an assistant."""
     try:
-        assistant = await mongodb.get_assistants_collection().find_one({"assistant_id": assistant_id})
+        # Build query to ensure user can only update their own assistants (unless admin)
+        query = {"assistant_id": assistant_id}
+        if Permission.ADMIN_SYSTEM not in current_user.permissions:
+            query["created_by"] = current_user.user_id
+            
+        assistant = await mongodb.get_assistants_collection().find_one(query)
         
         if not assistant:
             raise HTTPException(status_code=404, detail="Assistant not found")
         
         # Update fields
         update_data = {
-            "modified_at": datetime.now()
+            "modified_at": datetime.now(),
+            "modified_by": current_user.user_id
         }
         
         if assistant_update.name is not None:
@@ -148,11 +176,19 @@ async def update_assistant(assistant_id: str, assistant_update: AssistantUpdate)
 
 
 @router.delete("/{assistant_id}", response_model=AssistantDelete)
-async def delete_assistant(assistant_id: str):
+async def delete_assistant(
+    assistant_id: str,
+    current_user: TokenData = Depends(require_permission(Permission.DELETE_CONVERSATIONS))
+):
     """Delete an assistant."""
     try:
+        # Build query to ensure user can only delete their own assistants (unless admin)
+        query = {"assistant_id": assistant_id}
+        if Permission.ADMIN_SYSTEM not in current_user.permissions:
+            query["created_by"] = current_user.user_id
+            
         # Check if assistant exists
-        assistant = await mongodb.get_assistants_collection().find_one({"assistant_id": assistant_id})
+        assistant = await mongodb.get_assistants_collection().find_one(query)
         
         if not assistant:
             raise HTTPException(status_code=404, detail="Assistant not found")
