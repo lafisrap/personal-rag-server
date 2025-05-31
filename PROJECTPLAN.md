@@ -161,42 +161,84 @@ app/
     -   Log correlation IDs
     -   Performance monitoring
 
-### Phase 2: DeepSeek Integration & LLM Migration (Week 3)
+### Phase 2: Multi-Provider LLM Integration (Week 3)
 
-#### 2.1 DeepSeek LLM Service Implementation
+#### 2.1 LLM Service Abstraction
 
--   **Create DeepSeek Service**
+-   **Create Abstract LLM Service**
 
-    ```python
-    class DeepSeekService:
-        def __init__(self):
-            self.api_key = settings.DEEPSEEK_API_KEY
-            self.base_url = settings.DEEPSEEK_API_URL
-            self.model = settings.DEEPSEEK_MODEL
-    ```
+    -   Define a base LLM service interface with common methods
+    -   Include methods for text completion and chat completion
+    -   Define standard parameter and response formats
 
--   **LLM Service Abstraction**
-    -   Create abstract base class for LLM providers
-    -   Implement provider factory pattern
-    -   Support multiple LLM providers (OpenAI, DeepSeek, etc.)
+-   **Implement Provider-Specific Services**
+
+    -   OpenAI service implementation
+    -   DeepSeek service implementation
+
+-   **LLM Provider Factory**
+    -   Create a factory pattern for instantiating provider services
+    -   Support dynamic provider selection
+    -   Implement proper error handling for misconfiguration
 
 #### 2.2 Configuration Updates
 
--   **Add DeepSeek Configuration**
-    ```python
-    # DeepSeek Settings
-    DEEPSEEK_API_KEY: Optional[str] = os.getenv("DEEPSEEK_API_KEY")
-    DEEPSEEK_API_URL: str = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com")
-    DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "deepseek")
-    ```
+-   **Multi-Provider Configuration**
 
-#### 2.3 Migration Strategy
+    -   Add environment variables for all supported providers
+    -   Set up default provider selection mechanism
+    -   Create provider-specific configuration sections
+    -   Include API keys, base URLs, and model names for each provider
 
--   **Gradual Migration**
-    -   Feature flag for LLM provider selection
-    -   A/B testing capabilities
-    -   Fallback mechanism to previous provider
+-   **Provider Configuration Factory**
+    -   Create a configuration factory for retrieving provider settings
+    -   Support different configuration requirements per provider
+    -   Implement validation for required configuration parameters
+    -   Support dynamic configuration reloading
+
+#### 2.3 Implementation Tasks
+
+-   **OpenAI Integration**
+
+    -   Implement async client for OpenAI API
+    -   Support latest Chat Completions API
+    -   Add token counting and rate limit handling
+    -   Implement robust error handling
+
+-   **DeepSeek Integration**
+
+    -   Create HTTP client for DeepSeek API
+    -   Implement authentication and request signing
+    -   Add model parameter mapping
+    -   Create response parsing and error handling
+
+-   **Common Infrastructure**
+    -   Implement request retry logic with exponential backoff
+    -   Add request/response logging with PII redaction
+    -   Create performance monitoring for API calls
+    -   Add telemetry for usage tracking
+
+#### 2.4 Testing and Validation
+
+-   **Unit Testing**
+
+    -   Create comprehensive test suite for each provider
+    -   Implement mock responses for all API endpoints
+    -   Test error handling and edge cases
+    -   Validate response parsing
+
+-   **Integration Testing**
+
+    -   Test end-to-end integration with each provider
+    -   Measure performance metrics and response times
+    -   Validate token counting accuracy
+    -   Test fallback mechanisms
+
+-   **Documentation**
+    -   Create developer documentation for LLM service
+    -   Document configuration parameters for each provider
+    -   Add usage examples for common scenarios
+    -   Include troubleshooting guide
 
 ### Phase 3: Document Management & Category System (Week 4)
 

@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: Optional[str] = os.getenv("DEEPSEEK_API_KEY")
     DEEPSEEK_API_URL: str = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com")
     DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    DEEPSEEK_PHILOSOPHY_MODEL: str = os.getenv("DEEPSEEK_PHILOSOPHY_MODEL", "deepseek-v3-0324")
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai")  # openai or deepseek
     
     # Embeddings Settings
