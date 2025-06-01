@@ -1,4 +1,4 @@
-import pinecone
+from pinecone import Pinecone, ServerlessSpec
 from app.core.config import settings
 import logging
 from typing import Dict, List, Any, Optional
@@ -10,31 +10,37 @@ class VectorDatabase:
     
     def __init__(self):
         self.initialized = False
+        self.pc = None
         self.index = None
     
     def init_pinecone(self):
         """Initialize Pinecone index."""
         try:
-            # Initialize pinecone
-            pinecone.init(
-                api_key=settings.PINECONE_API_KEY,
-                environment=settings.PINECONE_ENVIRONMENT
-            )
+            # Initialize Pinecone client
+            self.pc = Pinecone(api_key=settings.PINECONE_API_KEY)
             
             # Check if index exists, if not create it
-            if settings.PINECONE_INDEX_NAME not in pinecone.list_indexes():
+            existing_indexes = self.pc.list_indexes().names()
+            
+            if settings.PINECONE_INDEX_NAME not in existing_indexes:
                 # Create index with appropriate dimension for the embedding model
                 # For text-embedding-3-large, the dimension is 3072
                 dimension = 3072
-                pinecone.create_index(
+                
+                # Use ServerlessSpec for serverless deployment
+                self.pc.create_index(
                     name=settings.PINECONE_INDEX_NAME,
                     dimension=dimension,
-                    metric="cosine"
+                    metric="cosine",
+                    spec=ServerlessSpec(
+                        cloud="aws",
+                        region=settings.PINECONE_ENVIRONMENT or "us-west-2"
+                    )
                 )
                 logger.info(f"Created Pinecone index: {settings.PINECONE_INDEX_NAME}")
             
             # Connect to the index
-            self.index = pinecone.Index(settings.PINECONE_INDEX_NAME, host=settings.PINECONE_HOST)
+            self.index = self.pc.Index(settings.PINECONE_INDEX_NAME)
             self.initialized = True
             logger.info(f"Connected to Pinecone index: {settings.PINECONE_INDEX_NAME}")
         except Exception as e:

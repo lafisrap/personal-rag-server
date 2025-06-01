@@ -1,0 +1,13 @@
+{
+  "total_categories": 15,
+  "total_documents": 15,
+  "successful_documents": 15,
+  "failed_documents": 0,
+  "categories": {
+    "Materialismus": {
+      "total_documents": 15,
+      "successful": 15,
+      "failed": 0
+    }
+  }
+}

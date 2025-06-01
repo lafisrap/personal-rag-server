@@ -17,7 +17,7 @@ pymongo>=4.4.0
 motor>=3.2.0  # Async MongoDB driver
 
 # Vector Database
-pinecone-client>=2.2.1
+pinecone>=7.0.0
 # weaviate-client>=3.18.0  # Uncomment if using Weaviate instead
 
 # LangChain and related packages

@@ -1,0 +1,22 @@
+from pydantic_settings import BaseSettings
+import os
+
+class Settings(BaseSettings):
+    # Model settings
+    model_name: str = "intfloat/multilingual-e5-large"
+    max_seq_length: int = 512
+    batch_size: int = 32
+
+    # Performance settings
+    use_half_precision: bool = True  # Use float16 on GPU
+    max_workers: int = 4
+    cache_dir: str = "/app/models"
+
+    # Service settings
+    host: str = "0.0.0.0"
+    port: int = 8001
+
+    class Config:
+        env_file = ".env"
+
+settings = Settings() 
