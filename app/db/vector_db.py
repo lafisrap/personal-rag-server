@@ -24,17 +24,16 @@ class VectorDatabase:
             
             if settings.PINECONE_INDEX_NAME not in existing_indexes:
                 # Create index with appropriate dimension for the embedding model
-                # For text-embedding-3-large, the dimension is 3072
-                dimension = 3072
+                dimension = settings.EMBEDDINGS_DIMENSION
                 
-                # Use ServerlessSpec for serverless deployment
+                # Create the index with ServerlessSpec
                 self.pc.create_index(
                     name=settings.PINECONE_INDEX_NAME,
                     dimension=dimension,
                     metric="cosine",
                     spec=ServerlessSpec(
                         cloud="aws",
-                        region=settings.PINECONE_ENVIRONMENT or "us-west-2"
+                        region=settings.PINECONE_ENVIRONMENT or "us-east-1"
                     )
                 )
                 logger.info(f"Created Pinecone index: {settings.PINECONE_INDEX_NAME}")

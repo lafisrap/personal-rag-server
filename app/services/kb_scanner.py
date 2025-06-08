@@ -10,7 +10,20 @@ class KnowledgeBaseScanner:
     """Service for scanning and cataloging knowledge base files."""
     
     def __init__(self):
-        self.supported_extensions = [".txt", ".quantify", ".csv"]
+        # Only process .txt files, exclude .quantify and .csv files
+        self.supported_extensions = [".txt"]
+    
+    def scan_kb(self, base_path: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Scan the knowledge base directory (alias for scan_directory).
+        
+        Args:
+            base_path: Path to the knowledge base root directory
+            
+        Returns:
+            Dict mapping categories to file information lists
+        """
+        return self.scan_directory(base_path)
     
     def scan_directory(self, base_path: str) -> Dict[str, List[Dict[str, Any]]]:
         """
@@ -99,8 +112,8 @@ class KnowledgeBaseScanner:
             Dict with extracted metadata
         """
         metadata = {
-            "author": None,
-            "title": None,
+            "author": "",
+            "title": "",
             "category": category
         }
         

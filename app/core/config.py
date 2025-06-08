@@ -35,11 +35,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_BURST: int = int(os.getenv("RATE_LIMIT_BURST", "10"))
     
     # CORS Settings
-    BACKEND_CORS_ORIGINS: List[str] = [
-        origin.strip() 
-        for origin in os.getenv("BACKEND_CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
-        if origin.strip()
-    ]
+    BACKEND_CORS_ORIGINS: List[str] = ["*"]
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_ALLOW_METHODS: List[str] = ["GET", "POST", "PUT", "DELETE", "PATCH"]
     CORS_ALLOW_HEADERS: List[str] = ["*"]
@@ -53,10 +49,10 @@ class Settings(BaseSettings):
     
     # Vector DB Settings (Pinecone)
     VECTOR_DB_TYPE: str = os.getenv("VECTOR_DB_TYPE", "pinecone")
-    PINECONE_API_KEY: Optional[str] = os.getenv("PINECONE_API_KEY")
-    PINECONE_ENVIRONMENT: Optional[str] = os.getenv("PINECONE_ENVIRONMENT")
-    PINECONE_INDEX_NAME: Optional[str] = os.getenv("PINECONE_INDEX_NAME", "rag-server")
-    PINECONE_HOST: Optional[str] = os.getenv("PINECONE_HOST", "")
+    PINECONE_API_KEY: str = os.getenv("PINECONE_API_KEY", "")
+    PINECONE_ENVIRONMENT: str = os.getenv("PINECONE_ENVIRONMENT", "")
+    PINECONE_INDEX_NAME: str = os.getenv("PINECONE_INDEX_NAME", "german-philosophic-index-12-worldviews")
+    PINECONE_HOST: str = os.getenv("PINECONE_HOST", "https://german-philosophic-index-12-worldviews-ssotzaw.svc.aped-4627-b74a.pinecone.io")
     
     # LLM Settings
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
@@ -66,12 +62,15 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: Optional[str] = os.getenv("DEEPSEEK_API_KEY")
     DEEPSEEK_API_URL: str = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com")
     DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-    DEEPSEEK_PHILOSOPHY_MODEL: str = os.getenv("DEEPSEEK_PHILOSOPHY_MODEL", "deepseek-v3-0324")
+    DEEPSEEK_PHILOSOPHY_MODEL: str = "deepseek-reasoner"  # Always use deepseek-reasoner for philosophical questions
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai")  # openai or deepseek
     
     # Embeddings Settings
-    EMBEDDINGS_MODEL: str = os.getenv("EMBEDDINGS_MODEL", "text-embedding-3-large")
-    EMBEDDINGS_DIMENSION: int = 3072  # Dimension for text-embedding-3-large
+    EMBEDDINGS_MODEL: str = os.getenv("EMBEDDINGS_MODEL", "deepset/gbert-large")
+    EMBEDDINGS_DIMENSION: int = 768  # Dimension for cross-en-de-roberta
+    
+    # Local Embedding Service
+    LOCAL_EMBEDDING_SERVICE_URL: str = os.getenv("LOCAL_EMBEDDING_SERVICE_URL", "http://localhost:8001")
     
     # App Settings
     MAX_CATEGORIES: int = 20
@@ -85,6 +84,11 @@ class Settings(BaseSettings):
     # Environment
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    
+    # Performance Settings
+    USE_MPS: bool = os.getenv("USE_MPS", "true").lower() == "true"  # Use Apple Metal Performance Shaders
+    BATCH_SIZE: int = int(os.getenv("BATCH_SIZE", "32"))  # Batch size for embeddings
+    EMBEDDING_CACHE_SIZE: int = int(os.getenv("EMBEDDING_CACHE_SIZE", "10000"))  # Number of embeddings to cache
     
     @property
     def is_production(self) -> bool:

@@ -3,7 +3,7 @@ import os
 
 class Settings(BaseSettings):
     # Model settings
-    model_name: str = "intfloat/multilingual-e5-large"
+    model_name: str = "T-Systems-onsite/cross-en-de-roberta-sentence-transformer"
     max_seq_length: int = 512
     batch_size: int = 32
 

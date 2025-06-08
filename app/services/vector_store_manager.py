@@ -5,6 +5,8 @@ import time
 from app.db.vector_db import vector_db
 from app.services.embedding_service import embedding_service
 import json
+import math
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +51,8 @@ class VectorStoreManager:
                 "document_id": doc_id,
                 "filename": document.get("filename", ""),
                 "category": category,
-                "author": document.get("author"),
-                "title": document.get("title"),
+                "author": document.get("author", ""),
+                "title": document.get("title", ""),
             }
             
             # Add word stats if available (limit to top 10 to reduce metadata size)
@@ -67,8 +69,8 @@ class VectorStoreManager:
             chunks = document["chunks"]
             logger.info(f"Generating embeddings for {len(chunks)} chunks from {document.get('filename')}")
             
-            # Process in smaller batches to avoid API limits and memory issues
-            embedding_batch_size = 10
+            # Process in larger batches to improve performance
+            embedding_batch_size = 32  # Increased from 10 for better throughput
             all_vectors = []
             
             for i in range(0, len(chunks), embedding_batch_size):
@@ -96,8 +98,7 @@ class VectorStoreManager:
                             "metadata": chunk_metadata
                         })
                     
-                    # Add small delay to avoid rate limits
-                    time.sleep(0.1)
+                    # No need for delay with local service
                     
                 except Exception as e:
                     logger.error(f"Error generating embeddings for batch: {str(e)}")
@@ -167,6 +168,68 @@ class VectorStoreManager:
             except Exception as e:
                 logger.error(f"Error upserting document {doc.get('filename')}: {str(e)}")
                 stats["failed"] += 1
+        
+        return stats
+    
+    def upsert_category_parallel(self, 
+                                category: str, 
+                                documents: List[Dict[str, Any]],
+                                namespace: Optional[str] = None,
+                                max_workers: int = 4) -> Dict[str, Any]:
+        """
+        Upsert all documents for a category to Pinecone using parallel processing.
+        
+        Args:
+            category: The worldview category (namespace)
+            documents: List of processed documents
+            namespace: Optional namespace override
+            max_workers: Maximum number of parallel workers
+            
+        Returns:
+            Dictionary with statistics
+        """
+        stats = {
+            "category": category,
+            "total_documents": len(documents),
+            "successful": 0,
+            "failed": 0,
+            "document_ids": []
+        }
+        
+        # Split documents into batches for parallel processing
+        batch_size = math.ceil(len(documents) / max_workers)
+        document_batches = [documents[i:i+batch_size] for i in range(0, len(documents), batch_size)]
+        
+        def process_batch(batch):
+            batch_stats = {
+                "successful": 0,
+                "failed": 0,
+                "document_ids": []
+            }
+            
+            for doc in batch:
+                try:
+                    doc_id = self.upsert_document(doc, category, namespace)
+                    if doc_id:
+                        batch_stats["successful"] += 1
+                        batch_stats["document_ids"].append(doc_id)
+                    else:
+                        batch_stats["failed"] += 1
+                except Exception as e:
+                    logger.error(f"Error upserting document {doc.get('filename')}: {str(e)}")
+                    batch_stats["failed"] += 1
+            
+            return batch_stats
+        
+        # Process batches in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            batch_results = list(executor.map(process_batch, document_batches))
+        
+        # Combine results
+        for result in batch_results:
+            stats["successful"] += result["successful"]
+            stats["failed"] += result["failed"]
+            stats["document_ids"].extend(result["document_ids"])
         
         return stats
     
@@ -297,9 +360,9 @@ class VectorStoreManager:
                 metadata = match.metadata
                 if metadata.get("document_id"):
                     doc_ids.add(metadata.get("document_id"))
-                if metadata.get("author"):
+                if metadata.get("author") and metadata.get("author").strip():
                     authors.add(metadata.get("author"))
-                if metadata.get("title"):
+                if metadata.get("title") and metadata.get("title").strip():
                     titles.add(metadata.get("title"))
             
             return {

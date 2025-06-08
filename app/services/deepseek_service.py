@@ -16,13 +16,8 @@ class DeepSeekService(BaseLLMService):
         self.api_key = settings.DEEPSEEK_API_KEY
         self.api_url = settings.DEEPSEEK_API_URL
         self.model_name = settings.DEEPSEEK_MODEL
-        self.philosophy_model_name = os.environ.get("DEEPSEEK_PHILOSOPHY_MODEL", "deepseek-reasoner")
+        self.philosophy_model_name = settings.DEEPSEEK_PHILOSOPHY_MODEL
         self.headers = None
-        
-        # If philosophy model isn't set, default to reasoner
-        if self.philosophy_model_name == "deepseek-v3-0324":
-            self.philosophy_model_name = "deepseek-reasoner"
-            logger.info(f"Updated philosophy model to {self.philosophy_model_name}")
     
     def initialize_model(self, **kwargs):
         """Initialize the DeepSeek client."""

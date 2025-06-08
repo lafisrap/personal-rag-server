@@ -6,11 +6,12 @@ from slowapi.errors import RateLimitExceeded
 import logging
 from contextlib import asynccontextmanager
 
-from app.api.endpoints import threads, messages, assistants, auth
+from app.api.endpoints import threads, messages, assistants, auth, health, rag
 from app.core.config import settings
 from app.core.security import limiter, get_security_headers, create_security_exception_handlers
 from app.db.mongodb import mongodb
 from app.services.user_service import user_service
+from app.db.vector_db import vector_db
 
 # Configure logging
 logging.basicConfig(
@@ -28,13 +29,15 @@ async def lifespan(app: FastAPI):
     await mongodb.connect_to_mongo()
     logger.info("Connected to MongoDB")
     
-    # Create first superuser if no users exist
+    # Initialize Pinecone
+    logger.info("Initializing Pinecone vector database...")
+    vector_db.init_pinecone()
+    logger.info("Pinecone initialized")
+    
+    # Check for existing users
     logger.info("Checking for existing users...")
-    superuser = await user_service.create_first_superuser()
-    if superuser:
-        logger.info(f"Created first superuser: {superuser.username}")
-    else:
-        logger.info("Users already exist, skipping superuser creation")
+    user_count = await user_service.get_user_count()
+    logger.info(f"Found {user_count} existing users")
     
     yield
     
@@ -141,6 +144,12 @@ api_router.include_router(
     tags=["messages"]
 )
 
+# Include RAG endpoints
+api_router.include_router(rag.router, prefix="/rag", tags=["rag"])
+
+# Health check endpoint
+api_router.include_router(health.router, prefix="/health", tags=["health"])
+
 # Include API router in app
 app.include_router(api_router)
 
@@ -215,6 +224,7 @@ async def app_info():
             "rag_system": "Enabled",
             "vector_db": settings.VECTOR_DB_TYPE,
             "llm_provider": settings.LLM_PROVIDER,
+            "embeddings_model": settings.EMBEDDINGS_MODEL,
             "user_management": "Enabled",
             "api_keys": "Enabled"
         }

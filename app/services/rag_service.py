@@ -26,7 +26,7 @@ class RAGService:
         
         Args:
             content: Document content
-            metadata: Document metadata including categories and tags
+            metadata: Document metadata including category and tags
             chunk_size: Size of each chunk in characters
             chunk_overlap: Overlap between chunks in characters
             
@@ -38,13 +38,18 @@ class RAGService:
             doc_id = str(uuid.uuid4())
             
             # Validate metadata
-            if "categories" in metadata:
-                if len(metadata["categories"]) > settings.MAX_CATEGORIES:
-                    raise ValueError(f"Maximum of {settings.MAX_CATEGORIES} categories allowed")
-                
-                for category, tags in metadata["categories"].items():
-                    if len(tags) > settings.MAX_TAGS_PER_CATEGORY:
-                        raise ValueError(f"Maximum of {settings.MAX_TAGS_PER_CATEGORY} tags per category allowed")
+            if not isinstance(metadata, dict):
+                raise ValueError("Metadata must be a dictionary")
+            
+            # Ensure metadata is compatible with Pinecone (flat structure)
+            # Pinecone only accepts string, number, boolean, or list of strings as metadata values
+            processed_metadata = {}
+            for key, value in metadata.items():
+                if isinstance(value, (str, int, float, bool)) or (isinstance(value, list) and all(isinstance(item, str) for item in value)):
+                    processed_metadata[key] = value
+                else:
+                    # Skip complex values that Pinecone doesn't support
+                    logger.warning(f"Skipping metadata field '{key}' with unsupported value type: {type(value)}")
             
             # Simple text chunking - in a real implementation, you might want more sophisticated chunking
             chunks = []
@@ -67,7 +72,7 @@ class RAGService:
                         "text": chunk,
                         "document_id": doc_id,
                         "chunk_index": i,
-                        **metadata
+                        **processed_metadata
                     }
                 })
             

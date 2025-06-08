@@ -1,12 +1,14 @@
 # Personal Embeddings Service
 
-A self-hosted embedding service using Microsoft's multilingual-e5-large model for high-quality text embeddings. Designed specifically for RAG (Retrieval-Augmented Generation) applications with zero ongoing API costs.
+A self-hosted embedding service using T-Systems-onsite/cross-en-de-roberta-sentence-transformer model for high-quality German/English text embeddings. Designed specifically for RAG (Retrieval-Augmented Generation) applications with zero ongoing API costs, optimized for German philosophical content.
 
 ## 🚀 Features
 
 -   **Self-hosted**: No external API dependencies, complete privacy control
--   **High-quality embeddings**: Uses `intfloat/multilingual-e5-large` (1024 dimensions)
+-   **German/English-optimized embeddings**: Uses `T-Systems-onsite/cross-en-de-roberta-sentence-transformer` (768 dimensions)
 -   **Fast and efficient**: Optimized for both single requests and batch processing
+-   **German number handling**: Improved handling of different number formats (e.g., "12" vs "zwölf")
+-   **Cross-lingual capabilities**: Handles both German and English with strong semantic understanding
 -   **GPU support**: Automatic GPU detection and utilization
 -   **RESTful API**: Easy integration with existing applications
 -   **Comprehensive testing**: Built-in testing and benchmarking tools
@@ -32,8 +34,8 @@ personal-embeddings-service/
 ├── tests/
 │   └── test_embedding_service.py
 ├── scripts/
-│   ├── download_model.py    # Pre-download model
-│   ├── test_embeddings.py   # Comprehensive testing
+│   ├── download_new_model.py    # Pre-download model
+│   ├── test_model_comparison.py # Performance testing
 │   └── benchmark.py         # Performance benchmarking
 ├── Dockerfile
 ├── docker-compose.yml
@@ -89,7 +91,7 @@ personal-embeddings-service/
 2. **Pre-download the model (optional but recommended):**
 
     ```bash
-    python scripts/download_model.py --cache-dir ./models
+    python scripts/download_new_model.py --cache-dir ./models
     ```
 
 3. **Run the service:**
@@ -145,10 +147,10 @@ GET /api/v1/info
 
 ## 🧪 Testing
 
-### Run Comprehensive Tests
+### Run Model Comparison Tests
 
 ```bash
-python scripts/test_embeddings.py
+python scripts/test_model_comparison.py
 ```
 
 ### With Performance Benchmarking
@@ -180,7 +182,7 @@ Based on testing with RTX 3070:
 
 ```bash
 # Model settings
-MODEL_NAME=intfloat/multilingual-e5-large
+MODEL_NAME=T-Systems-onsite/cross-en-de-roberta-sentence-transformer
 MAX_SEQ_LENGTH=512
 BATCH_SIZE=32
 
@@ -200,7 +202,7 @@ Edit `app/config.py` to customize settings:
 
 ```python
 class Settings(BaseSettings):
-    model_name: str = "intfloat/multilingual-e5-large"
+    model_name: str = "T-Systems-onsite/cross-en-de-roberta-sentence-transformer"
     batch_size: int = 32
     max_workers: int = 4
     # ... other settings
@@ -289,7 +291,7 @@ curl -X POST "http://localhost:8001/api/v1/search" \
 
     ```bash
     # Pre-download manually
-    python scripts/download_model.py
+    python scripts/download_new_model.py
     ```
 
 2. **GPU Not Detected**
@@ -327,8 +329,8 @@ To integrate with your main RAG server, update the configuration:
 ```python
 # In your RAG server configuration
 LOCAL_EMBEDDING_SERVICE_URL = "http://localhost:8001"
-EMBEDDINGS_DIMENSION = 1024
-EMBEDDINGS_MODEL = "multilingual-e5-large"
+EMBEDDINGS_DIMENSION = 768
+EMBEDDINGS_MODEL = "T-Systems-onsite/cross-en-de-roberta-sentence-transformer"
 ```
 
 ## 📈 Monitoring
