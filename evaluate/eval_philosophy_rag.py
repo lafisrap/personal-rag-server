@@ -19,11 +19,11 @@ RESULTS_DIR = Path("results")
 
 # Philosophical questions to evaluate
 QUESTIONS = [
-    "Was weißt du über frühere Inkarnationen von Karl Marx",
-    "Wie war das Verhältnis von Karl Marx und Friedrich Engels in einem früheren Leben?",
-    "Zu welcher Engelhierarchiestufe gehörne die Elohim?",
     "Fasse die Kernpunkte der sozialen Frage in 200 Worten zusammen",
-    "Wo liegt der Startpunkt der Philosophie bei Rudolf Steiner?"
+    "Wo liegt der Ausgangspunkt der Wissenschaft, der tiefste Punkt, bei Rudolf Steiner und im Materialismus?",
+    "Was charakterisiert Rudolf Steiner als das Besondere an Friedrich Nietzsche?",
+    "Was ist laut Steiner bei Kindern in der 5. Schulklasse besonders zu beachten? Ist das nach dem Rubikon?",
+    "Warum eignet sich die Geistesart Goethes als Grundlage für eine Wissenschaft der geistigen Welt?"
 ]
 
 def ensure_results_dir():

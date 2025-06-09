@@ -1,6 +1,6 @@
 # RAG CLI Tool
 
-qThe RAG CLI (Command Line Interface) tool provides a unified interface for managing RAG (Retrieval-Augmented Generation) components, including the Pinecone vector database.
+The RAG CLI (Command Line Interface) tool provides a unified interface for managing RAG (Retrieval-Augmented Generation) components, including the Pinecone vector database.
 
 ## Features
 
