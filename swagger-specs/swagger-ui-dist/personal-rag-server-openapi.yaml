@@ -1,0 +1,673 @@
+openapi: 3.0.3
+info:
+    title: Personal RAG Server API
+    description: |
+        Personal RAG Server with FastAPI - Secure and Production Ready
+
+        Vector Database: Pinecone (german-philosophic-index-12-worldviews)
+        Pinecone Host: https://german-philosophic-index-12-worldviews-ssotzaw.svc.aped-4627-b74a.pinecone.io
+    version: 1.0.0
+    contact:
+        name: API Support
+servers:
+    - url: /api/v1
+      description: API v1
+
+components:
+    securitySchemes:
+        bearerAuth:
+            type: http
+            scheme: bearer
+            bearerFormat: JWT
+        apiKeyAuth:
+            type: apiKey
+            in: header
+            name: X-API-Key
+
+    schemas:
+        Message:
+            type: object
+            properties:
+                role:
+                    type: string
+                    enum: [user, assistant, system]
+                content:
+                    type: string
+            required:
+                - role
+                - content
+
+        RAGQueryRequest:
+            type: object
+            properties:
+                messages:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Message'
+                filter:
+                    type: object
+                    additionalProperties: true
+                system_prompt:
+                    type: string
+                top_k:
+                    type: integer
+                    default: 5
+            required:
+                - messages
+
+        RAGQueryResponse:
+            type: object
+            properties:
+                content:
+                    type: string
+                model:
+                    type: string
+                retrieved_documents:
+                    type: array
+                    items:
+                        type: object
+                        additionalProperties: true
+            required:
+                - content
+
+        DocumentAddRequest:
+            type: object
+            properties:
+                content:
+                    type: string
+                metadata:
+                    type: object
+                    additionalProperties: true
+                chunk_size:
+                    type: integer
+                    default: 1000
+                chunk_overlap:
+                    type: integer
+                    default: 200
+            required:
+                - content
+                - metadata
+
+        DocumentAddResponse:
+            type: object
+            properties:
+                document_id:
+                    type: string
+            required:
+                - document_id
+
+        SearchRequest:
+            type: object
+            properties:
+                query:
+                    type: string
+                filter:
+                    type: object
+                    additionalProperties: true
+                top_k:
+                    type: integer
+                    default: 5
+            required:
+                - query
+
+        UserCreate:
+            type: object
+            properties:
+                username:
+                    type: string
+                email:
+                    type: string
+                    format: email
+                password:
+                    type: string
+                    format: password
+                full_name:
+                    type: string
+                role:
+                    type: string
+                    enum: [user, admin, moderator]
+            required:
+                - username
+                - email
+                - password
+
+        UserUpdate:
+            type: object
+            properties:
+                email:
+                    type: string
+                    format: email
+                password:
+                    type: string
+                    format: password
+                full_name:
+                    type: string
+                role:
+                    type: string
+                    enum: [user, admin, moderator]
+                is_active:
+                    type: boolean
+
+        User:
+            type: object
+            properties:
+                id:
+                    type: string
+                username:
+                    type: string
+                email:
+                    type: string
+                    format: email
+                full_name:
+                    type: string
+                role:
+                    type: string
+                    enum: [user, admin, moderator]
+                is_active:
+                    type: boolean
+                created_at:
+                    type: string
+                    format: date-time
+                last_login:
+                    type: string
+                    format: date-time
+                login_count:
+                    type: integer
+            required:
+                - id
+                - username
+                - email
+                - role
+                - is_active
+
+        Token:
+            type: object
+            properties:
+                access_token:
+                    type: string
+                token_type:
+                    type: string
+                expires_at:
+                    type: string
+                    format: date-time
+            required:
+                - access_token
+                - token_type
+
+        APIKeyCreate:
+            type: object
+            properties:
+                name:
+                    type: string
+                expires_in_days:
+                    type: integer
+            required:
+                - name
+
+        APIKey:
+            type: object
+            properties:
+                id:
+                    type: string
+                name:
+                    type: string
+                prefix:
+                    type: string
+                created_at:
+                    type: string
+                    format: date-time
+                expires_at:
+                    type: string
+                    format: date-time
+                is_active:
+                    type: boolean
+            required:
+                - id
+                - name
+                - prefix
+                - created_at
+                - is_active
+
+        APIKeyResponse:
+            type: object
+            properties:
+                id:
+                    type: string
+                name:
+                    type: string
+                key:
+                    type: string
+                prefix:
+                    type: string
+                created_at:
+                    type: string
+                    format: date-time
+                expires_at:
+                    type: string
+                    format: date-time
+            required:
+                - id
+                - name
+                - key
+                - prefix
+                - created_at
+
+paths:
+    /:
+        get:
+            summary: Root endpoint for health check
+            operationId: root
+            tags:
+                - status
+            responses:
+                '200':
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    status:
+                                        type: string
+                                    message:
+                                        type: string
+                                    version:
+                                        type: string
+                                    security_enabled:
+                                        type: boolean
+                                    environment:
+                                        type: string
+
+    /health:
+        get:
+            summary: Detailed health check endpoint
+            operationId: health_check
+            tags:
+                - status
+            responses:
+                '200':
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    status:
+                                        type: string
+                                    timestamp:
+                                        type: string
+                                        format: date-time
+                                    version:
+                                        type: string
+                                    environment:
+                                        type: string
+                                    dependencies:
+                                        type: object
+                                    statistics:
+                                        type: object
+
+    /info:
+        get:
+            summary: Application information endpoint
+            operationId: app_info
+            tags:
+                - status
+            responses:
+                '200':
+                    description: Successful response
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    name:
+                                        type: string
+                                    version:
+                                        type: string
+                                    environment:
+                                        type: string
+                                    security:
+                                        type: object
+                                    features:
+                                        type: object
+
+    /auth/login:
+        post:
+            summary: User login with username and password
+            operationId: login
+            tags:
+                - authentication
+            requestBody:
+                required: true
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            type: object
+                            properties:
+                                username:
+                                    type: string
+                                password:
+                                    type: string
+                                    format: password
+                            required:
+                                - username
+                                - password
+            responses:
+                '200':
+                    description: Successful login
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Token'
+                '401':
+                    description: Incorrect username or password
+
+    /auth/register:
+        post:
+            summary: Register a new user
+            operationId: register
+            tags:
+                - authentication
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UserCreate'
+            responses:
+                '200':
+                    description: User successfully created
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/User'
+                '400':
+                    description: Bad request
+
+    /auth/me:
+        get:
+            summary: Get current user information
+            operationId: get_current_user_info
+            tags:
+                - users
+            security:
+                - bearerAuth: []
+                - apiKeyAuth: []
+            responses:
+                '200':
+                    description: Current user information
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/User'
+                '401':
+                    description: Unauthorized
+                '404':
+                    description: User not found
+
+        put:
+            summary: Update current user information
+            operationId: update_current_user
+            tags:
+                - users
+            security:
+                - bearerAuth: []
+                - apiKeyAuth: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UserUpdate'
+            responses:
+                '200':
+                    description: User successfully updated
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/User'
+                '400':
+                    description: Bad request
+                '401':
+                    description: Unauthorized
+                '404':
+                    description: User not found
+
+    /auth/api-keys:
+        post:
+            summary: Create a new API key for the current user
+            operationId: create_api_key
+            tags:
+                - api-keys
+            security:
+                - bearerAuth: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/APIKeyCreate'
+            responses:
+                '200':
+                    description: API key successfully created
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/APIKeyResponse'
+                '401':
+                    description: Unauthorized
+
+        get:
+            summary: List API keys for the current user
+            operationId: list_my_api_keys
+            tags:
+                - api-keys
+            security:
+                - bearerAuth: []
+            responses:
+                '200':
+                    description: List of API keys
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                items:
+                                    $ref: '#/components/schemas/APIKey'
+                '401':
+                    description: Unauthorized
+
+    /auth/api-keys/{api_key_id}:
+        delete:
+            summary: Delete an API key
+            operationId: delete_api_key
+            tags:
+                - api-keys
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: api_key_id
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                '200':
+                    description: API key deleted successfully
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    message:
+                                        type: string
+                '401':
+                    description: Unauthorized
+                '404':
+                    description: API key not found
+
+    /auth/api-keys/{api_key_id}/revoke:
+        patch:
+            summary: Revoke an API key (disable without deleting)
+            operationId: revoke_api_key
+            tags:
+                - api-keys
+            security:
+                - bearerAuth: []
+            parameters:
+                - name: api_key_id
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+            responses:
+                '200':
+                    description: API key revoked successfully
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    message:
+                                        type: string
+                '401':
+                    description: Unauthorized
+                '404':
+                    description: API key not found
+
+    /auth/validate-password:
+        post:
+            summary: Validate password strength without authentication
+            operationId: validate_password
+            tags:
+                - utilities
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                password:
+                                    type: string
+                                    format: password
+                            required:
+                                - password
+            responses:
+                '200':
+                    description: Password validation result
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    is_valid:
+                                        type: boolean
+                                    message:
+                                        type: string
+                                    requirements:
+                                        type: object
+
+    /rag/query:
+        post:
+            summary: Generate a response using RAG (Retrieval Augmented Generation)
+            operationId: rag_query
+            tags:
+                - rag
+            security:
+                - bearerAuth: []
+                - apiKeyAuth: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/RAGQueryRequest'
+            responses:
+                '200':
+                    description: RAG response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/RAGQueryResponse'
+                '401':
+                    description: Unauthorized
+                '500':
+                    description: RAG query failed
+
+    /rag/documents:
+        post:
+            summary: Add a document to the RAG system
+            operationId: add_document
+            tags:
+                - rag
+            security:
+                - bearerAuth: []
+                - apiKeyAuth: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/DocumentAddRequest'
+            responses:
+                '200':
+                    description: Document added successfully
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/DocumentAddResponse'
+                '401':
+                    description: Unauthorized
+                '500':
+                    description: Failed to add document
+
+    /rag/search:
+        post:
+            summary: Search for documents using semantic search
+            operationId: search_documents
+            tags:
+                - rag
+            security:
+                - bearerAuth: []
+                - apiKeyAuth: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SearchRequest'
+            responses:
+                '200':
+                    description: Search results
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                items:
+                                    type: object
+                                    additionalProperties: true
+                '401':
+                    description: Unauthorized
+                '500':
+                    description: Search failed
+
+    /health/health:
+        get:
+            summary: Health check endpoint that includes embedding model status
+            operationId: health_check_api
+            tags:
+                - health
+            responses:
+                '200':
+                    description: Health check result
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    status:
+                                        type: string
+                                    api_version:
+                                        type: string
+                                    embedding_service:
+                                        type: object

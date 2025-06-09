@@ -1,0 +1,50 @@
+name: Update Swagger Specifications
+
+on:
+    push:
+        branches: [main, master]
+        paths:
+            - 'personal-rag-server-openapi.yaml'
+            - 'personal-embeddings-service-openapi.yaml'
+            - 'swagger-specs/personal-rag-server-openapi.yaml'
+            - 'swagger-specs/personal-embeddings-service-openapi.yaml'
+            - 'app/**/*.py'
+            - 'personal-embeddings-service/app/**/*.py'
+
+jobs:
+    update-swagger-specs:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v3
+
+            - name: Set up Python
+              uses: actions/setup-python@v4
+              with:
+                  python-version: '3.11'
+
+            - name: Install dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+            - name: Update Swagger specs
+              run: |
+                  mkdir -p swagger-specs
+
+                  # Check if specs exist in root directory
+                  if [ -f personal-rag-server-openapi.yaml ]; then
+                    cp personal-rag-server-openapi.yaml swagger-specs/
+                  fi
+
+                  if [ -f personal-embeddings-service-openapi.yaml ]; then
+                    cp personal-embeddings-service-openapi.yaml swagger-specs/
+                  fi
+
+            - name: Commit and push if changed
+              run: |
+                  git config --global user.name 'GitHub Actions'
+                  git config --global user.email 'github-actions@github.com'
+                  git add swagger-specs/
+                  git diff --quiet && git diff --staged --quiet || (git commit -m "Update Swagger specifications" && git push)
