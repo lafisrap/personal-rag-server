@@ -6,10 +6,12 @@ services:
         ports:
             - '8001:8001'
         environment:
-            - USE_HALF_PRECISION=false  # Disable FP16 for CPU
+            - USE_HALF_PRECISION=false # Disable FP16 for CPU
+            - TRANSFORMERS_CACHE=/app/models # Set Hugging Face cache location
+            - HF_HOME=/app/models # Set Hugging Face home
         volumes:
-            - ./models:/app/models # Cache downloaded models
-            - ./logs:/app/logs # Store logs
+            - ./models:/app/models:rw # Ensure read-write permissions for model cache
+            - ./logs:/app/logs:rw # Ensure read-write permissions for logs
         restart: unless-stopped
         healthcheck:
             test:

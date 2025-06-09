@@ -10,7 +10,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 class LocalEmbeddingService:
-    """Asynchronous embedding service using multilingual-e5-large."""
+    """Asynchronous embedding service using the configured model."""
     
     def __init__(self):
         self.model = EmbeddingModel()
@@ -18,11 +18,11 @@ class LocalEmbeddingService:
         self.ready = False
         
     async def load_model(self):
-        """Load the e5-large model asynchronously."""
+        """Load the model asynchronously."""
         def _load_model():
             return self.model.load_model()
         
-        logger.info("Loading multilingual-e5-large model asynchronously")
+        logger.info(f"Loading {settings.model_name} model asynchronously")
         success = await asyncio.get_event_loop().run_in_executor(
             self.executor, _load_model
         )

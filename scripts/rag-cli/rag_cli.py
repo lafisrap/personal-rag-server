@@ -17,6 +17,7 @@ import json
 from datetime import datetime
 import time
 from tqdm import tqdm
+import uuid
 
 # Add the project root to the Python path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
@@ -42,6 +43,228 @@ logger = logging.getLogger("rag-cli")
 def cli():
     """RAG CLI - Command Line Interface for RAG (Retrieval-Augmented Generation) Management."""
     pass
+
+# Pinecone Management Commands
+@cli.group('pinecone')
+def pinecone_group():
+    """Pinecone vector database management commands."""
+    pass
+
+@pinecone_group.command('truncate')
+@click.option('--index-name', required=True, help='Name of the Pinecone index to truncate')
+@click.confirmation_option(prompt='Are you sure you want to truncate the Pinecone index? This will delete ALL vectors!')
+def pinecone_truncate(index_name: str):
+    """Truncate (delete all vectors from) a Pinecone index."""
+    from app.db.vector_db import vector_db
+    from app.core.config import settings
+    
+    click.echo(f"Truncating Pinecone index: {index_name}")
+    
+    try:
+        # Verify the index name
+        if settings.PINECONE_INDEX_NAME != index_name:
+            click.echo(f"Warning: The specified index ({index_name}) does not match the configured index ({settings.PINECONE_INDEX_NAME})")
+            if not click.confirm("Do you want to continue anyway?"):
+                click.echo("Operation cancelled.")
+                return
+        
+        # Initialize Vector-DB
+        vector_db.init_pinecone()
+        
+        # Delete all vectors using namespace deletion approach
+        namespaces = vector_db.index.describe_index_stats().get('namespaces', {})
+        
+        if not namespaces:
+            click.echo("No namespaces found in the index. The index may already be empty.")
+            return
+        
+        click.echo(f"Found {len(namespaces)} namespaces: {', '.join(namespaces.keys())}")
+        with click.progressbar(namespaces.keys(), label='Truncating namespaces') as bar:
+            for namespace in bar:
+                try:
+                    vector_db.index.delete(delete_all=True, namespace=namespace)
+                    click.echo(f"Deleted all vectors in namespace: {namespace}")
+                except Exception as e:
+                    click.echo(f"Error deleting namespace {namespace}: {str(e)}", err=True)
+        
+        # Verify the index is empty
+        new_stats = vector_db.index.describe_index_stats()
+        new_vector_count = new_stats.get('total_vector_count', 0)
+        
+        if new_vector_count == 0:
+            click.echo("✅ Successfully truncated the index. The index is now empty.")
+        else:
+            click.echo(f"⚠️ Index truncation may be incomplete. There are still {new_vector_count} vectors in the index.")
+        
+    except Exception as e:
+        click.echo(f"Error truncating index: {str(e)}", err=True)
+        sys.exit(1)
+
+@pinecone_group.command('upload')
+@click.option('--index-name', required=True, help='Name of the Pinecone index to upload to')
+@click.option('--source-dir', required=True, help='Source directory containing documents to upload')
+@click.option('--category', required=True, help='Category to assign to the documents')
+@click.option('--chunk-size', type=int, default=600, help='Size of text chunks')
+@click.option('--chunk-overlap', type=int, default=250, help='Overlap between chunks')
+@click.option('--parallel/--no-parallel', default=False, help='Use parallel processing')
+@click.option('--workers', type=int, default=4, help='Number of parallel workers')
+def pinecone_upload(index_name: str, source_dir: str, category: str, chunk_size: int, chunk_overlap: int, 
+                    parallel: bool, workers: int):
+    """Upload documents to a Pinecone index with custom chunking parameters."""
+    from app.services.file_processor import FileProcessor
+    from app.services.vector_store_manager import vector_store_manager
+    from app.db.vector_db import vector_db
+    from app.core.config import settings
+    import glob
+    
+    click.echo(f"Uploading documents from {source_dir}/{category} to Pinecone index {index_name}")
+    click.echo(f"Using chunk size: {chunk_size}, chunk overlap: {chunk_overlap}")
+    
+    try:
+        # Verify the index name
+        if settings.PINECONE_INDEX_NAME != index_name:
+            click.echo(f"Warning: The specified index ({index_name}) does not match the configured index ({settings.PINECONE_INDEX_NAME})")
+            if not click.confirm("Do you want to continue anyway?"):
+                click.echo("Operation cancelled.")
+                return
+        
+        # Initialize Vector-DB
+        vector_db.init_pinecone()
+        
+        # Construct the specific category directory path
+        category_dir = os.path.join(source_dir, category)
+        
+        # Validate category directory
+        if not os.path.isdir(category_dir):
+            click.echo(f"Error: Category directory does not exist: {category_dir}", err=True)
+            sys.exit(1)
+        
+        # Find all text files in the specific category directory (non-recursive)
+        text_files = glob.glob(os.path.join(category_dir, "*.txt"))
+        
+        if not text_files:
+            click.echo(f"Error: No text files found in {category_dir}", err=True)
+            sys.exit(1)
+        
+        click.echo(f"Found {len(text_files)} text files to process in category '{category}'")
+        
+        # Create custom file processor with specified chunk size
+        custom_processor = FileProcessor(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        
+        # Process files
+        documents = []
+        for file_path in tqdm(text_files, desc="Processing files"):
+            try:
+                # Extract filename without path
+                filename = os.path.basename(file_path)
+                
+                # Extract metadata (author and title) from filename if possible
+                author = ""
+                title = filename
+                if "#" in filename:
+                    parts = filename.split("#", 1)
+                    author = parts[0]
+                    title = parts[1].replace(".txt", "")
+                
+                # Create file_info dictionary needed by processor
+                file_info = {
+                    "path": file_path,
+                    "filename": filename,
+                    "extension": ".txt",
+                    "metadata": {
+                        "filename": filename,
+                        "author": author,
+                        "title": title,
+                        "category": category,
+                        "document_id": str(uuid.uuid4())  # Generate a unique ID
+                    }
+                }
+                
+                # Process the file using the custom processor
+                processed_doc = custom_processor.process_file(file_info)
+                
+                if processed_doc and "chunks" in processed_doc:
+                    documents.append(processed_doc)
+                    
+            except Exception as e:
+                logger.error(f"Error processing file {file_path}: {str(e)}")
+        
+        if not documents:
+            click.echo("No documents were successfully processed.")
+            return
+        
+        click.echo(f"Successfully processed {len(documents)} documents")
+        
+        # Upload to vector store
+        try:
+            click.echo(f"Uploading documents to Pinecone...")
+            
+            if parallel:
+                stats = vector_store_manager.upsert_category_parallel(
+                    category, 
+                    documents,
+                    max_workers=workers
+                )
+            else:
+                stats = vector_store_manager.upsert_category(category, documents)
+            
+            click.echo(f"Upload complete: {stats['successful']} documents successful, {stats['failed']} documents failed")
+            
+        except Exception as e:
+            logger.error(f"Error uploading documents: {str(e)}")
+            click.echo(f"Error uploading documents: {str(e)}", err=True)
+            sys.exit(1)
+        
+    except Exception as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        sys.exit(1)
+
+@pinecone_group.command('stats')
+@click.option('--index-name', required=True, help='Name of the Pinecone index to get statistics for')
+def pinecone_stats(index_name: str):
+    """Get statistics about a Pinecone index."""
+    from app.db.vector_db import vector_db
+    from app.core.config import settings
+    
+    click.echo(f"Getting statistics for Pinecone index: {index_name}")
+    
+    try:
+        # Verify the index name
+        if settings.PINECONE_INDEX_NAME != index_name:
+            click.echo(f"Warning: The specified index ({index_name}) does not match the configured index ({settings.PINECONE_INDEX_NAME})")
+            if not click.confirm("Do you want to continue anyway?"):
+                click.echo("Operation cancelled.")
+                return
+        
+        # Initialize Vector-DB
+        vector_db.init_pinecone()
+        
+        # Get index statistics
+        stats = vector_db.index.describe_index_stats()
+        
+        # Display statistics
+        click.echo("\nIndex Statistics:")
+        click.echo(f"Total Vector Count: {stats.get('total_vector_count', 0)}")
+        click.echo(f"Dimension: {stats.get('dimension', 'Unknown')}")
+        
+        # Display namespace statistics
+        namespaces = stats.get('namespaces', {})
+        click.echo(f"\nNamespaces ({len(namespaces)}):")
+        
+        for namespace, ns_stats in namespaces.items():
+            click.echo(f"\n  Namespace: {namespace}")
+            click.echo(f"  Vector Count: {ns_stats.get('vector_count', 0)}")
+        
+        # Save statistics to file
+        stats_file = f"logs/pinecone_stats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(stats_file, 'w') as f:
+            json.dump(stats, f, indent=2)
+        
+        click.echo(f"\nStatistics saved to {stats_file}")
+        
+    except Exception as e:
+        click.echo(f"Error getting statistics: {str(e)}", err=True)
+        sys.exit(1)
 
 # Knowledge Base Management Commands
 @cli.group('kb')

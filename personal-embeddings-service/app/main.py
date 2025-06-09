@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Personal Embeddings Service",
-    description="Self-hosted multilingual-e5-large embedding service for RAG applications",
+    description=f"Self-hosted {settings.model_name} embedding service for RAG applications",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
@@ -50,7 +50,7 @@ async def root():
     """Root endpoint with service information."""
     return {
         "message": "Personal Embeddings Service",
-        "model": "multilingual-e5-large",
+        "model": settings.model_name,
         "version": "1.0.0",
         "docs": "/docs",
         "health": "/api/v1/health"
