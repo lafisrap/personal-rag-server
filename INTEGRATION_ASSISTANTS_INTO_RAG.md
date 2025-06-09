@@ -11,6 +11,17 @@ This document outlines a plan for creating and integrating four philosophical as
 
 These assistants will leverage Pinecone's vector database for knowledge retrieval and will respond to prompts using templates like the "gedankenfehler-formulieren" template.
 
+## IMPORTANT: Do Not Modify Template and Config Files
+
+**WARNING:** The template files (in `assistants/templates/`) and assistant configuration files (in `assistants/config/`) should NEVER be modified unless explicitly stated. These files contain carefully crafted instructions and prompt templates that are essential for the philosophical assistants to function correctly with their specific worldviews.
+
+Specifically:
+
+-   Template files (\*.mdt) contain precise formats and instructions that ensure proper JSON responses
+-   Configuration files (\*.json) contain the core personality and worldview instructions for each assistant
+
+Any modifications to these files could break functionality or alter the philosophical stance of the assistants.
+
 ## Analysis of Existing Assistant Configurations
 
 ### Common Elements Across Assistants
@@ -421,13 +432,28 @@ Sprich aus dir selbst heraus, zitiere nicht, verweise nicht auf andere. Bemühe 
     - Configure model parameters (temperature, top_p)
     - Link to the appropriate category in the shared vector store
 
-2. **Testing Framework**
+2. **Extract Common Instructions**
+
+    - Create a shared instructions module (`common_instructions.py`)
+    - Move redundant instructions (language settings, vector store usage) to this module
+    - Update assistant configurations to use only worldview-specific instructions
+    - Create composition functions to combine worldview-specific and common instructions
+
+3. **Fix Module Structure and Imports**
+
+    - Create proper Python package structure with `setup.py`
+    - Fix import paths in test files (change `personal_rag_server` to match directory structure)
+    - Enable installation as a development package for easier imports
+    - Standardize module naming conventions
+
+4. **Testing Framework**
 
     - Develop test cases for each assistant
     - Create evaluation metrics for philosophical accuracy
     - Implement feedback mechanism for improving responses
+    - Fix test imports and ensure all tests pass
 
-3. **Integration with Existing RAG System**
+5. **Integration with Existing RAG System**
     - Connect assistants to main application
     - Implement routing logic for directing queries to appropriate assistant
     - Create fallback mechanisms
