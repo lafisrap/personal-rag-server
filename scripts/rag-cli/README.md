@@ -6,6 +6,7 @@ The RAG CLI (Command Line Interface) tool provides a unified interface for manag
 
 -   **Knowledge Base Management**: Upload, update, delete, and get statistics about your knowledge base
 -   **Search and Query**: Perform searches and queries against your vector database
+-   **Assistant Management**: Create, manage, and interact with Pinecone Assistants for philosophical RAG
 -   **Diagnostics and Reporting**: Run diagnostics, check documents, and generate reports
 
 ## Installation
@@ -23,6 +24,7 @@ python -m rag_cli [command-group] [command] [options]
 -   `pinecone`: Pinecone vector database management
 -   `kb`: Knowledge base management
 -   `search`: Search and query operations
+-   `assistants`: Pinecone Assistant management for philosophical RAG
 -   `diagnostics`: Diagnostics and reporting
 
 ## Pinecone Commands
@@ -170,3 +172,72 @@ rag-cli diagnostics check-document-improved --document-id "Document ID" --expect
 ```
 
 This command uses multiple strategies to find documents and handles various edge cases better than the original command.
+
+## Assistant Management
+
+The CLI provides comprehensive management of Pinecone Assistants for philosophical RAG functionality:
+
+```bash
+# List all assistants
+rag-cli assistants list
+
+# Create a custom assistant
+rag-cli assistants create "My Assistant" Idealismus --instructions-file custom.txt
+
+# Chat with an assistant
+rag-cli assistants chat aurelian-i--schelling "What is the nature of reality?"
+
+# Interactive chat with history
+rag-cli assistants chat aurelian-i--schelling "Hello" --interactive --history-file chat.json
+
+# Add documents to an assistant
+rag-cli assistants add-files aurelian-i--schelling /path/to/philosophical/texts/*.txt --worldview Idealismus
+
+# List files uploaded to an assistant
+rag-cli assistants list-files aurelian-i--schelling
+
+# Query assistant for context without generating response
+rag-cli assistants context aurelian-i--schelling "Platonic forms" --top-k 5
+
+# Delete an assistant
+rag-cli assistants delete my-assistant
+```
+
+### Philosophical Worldviews
+
+The system supports four philosophical worldviews:
+
+-   **Idealismus**: Focuses on ideas as primary reality (Aurelian I. Schelling)
+-   **Materialismus**: Emphasizes material reality and biological processes (Aloys I. Freud)
+-   **Realismus**: Balances spiritual and material perspectives (Arvid I. Steiner)
+-   **Spiritualismus**: Emphasizes spiritual hierarchies and development (Amara I. Steiner)
+
+### Complete Assistant Workflow
+
+```bash
+# 1. Create philosophical assistants individually
+rag-cli assistants create "Aurelian I. Schelling" Idealismus
+rag-cli assistants create "Aloys I. Freud" Materialismus
+rag-cli assistants create "Arvid I. Steiner" Realismus
+rag-cli assistants create "Amara I. Steiner" Spiritualismus
+
+# 2. Verify assistants were created
+rag-cli assistants list
+
+# 3. Add philosophical texts to each assistant
+rag-cli assistants add-files aurelian-i--schelling /texts/idealismus/*.txt --worldview Idealismus
+rag-cli assistants add-files aloys-i--freud /texts/materialismus/*.txt --worldview Materialismus
+rag-cli assistants add-files arvid-i--steiner /texts/realismus/*.txt --worldview Realismus
+rag-cli assistants add-files amara-i--steiner /texts/spiritualismus/*.txt --worldview Spiritualismus
+
+# 4. Test assistants with philosophical questions
+rag-cli assistants chat aurelian-i--schelling "Explain Platonic idealism"
+rag-cli assistants chat aloys-i--freud "How do unconscious drives work?"
+rag-cli assistants chat arvid-i--steiner "What is anthroposophy?"
+rag-cli assistants chat amara-i--steiner "Describe spiritual hierarchies"
+
+# 5. Use context queries for research
+rag-cli assistants context aurelian-i--schelling "ideas and reality" --output-file research.json
+```
+
+See [ASSISTANTS_CLI_GUIDE.md](ASSISTANTS_CLI_GUIDE.md) for comprehensive documentation of assistant commands.

@@ -18,6 +18,7 @@ motor>=3.2.0  # Async MongoDB driver
 
 # Vector Database
 pinecone>=7.0.0
+pinecone-plugin-assistant>=0.1.0  # Added for Pinecone Assistant API
 # weaviate-client>=3.18.0  # Uncomment if using Weaviate instead
 
 # LangChain and related packages

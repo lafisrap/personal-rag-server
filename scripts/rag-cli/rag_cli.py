@@ -1485,5 +1485,645 @@ def generate_report(output_dir: str, format: str):
         click.echo(f"Error generating report: {str(e)}", err=True)
         sys.exit(1)
 
+# Assistant Management Commands
+@cli.group('assistants')
+def assistants_group():
+    """Pinecone Assistant management commands."""
+    pass
+
+@assistants_group.command('models')
+def assistants_models():
+    """Show available LLM models for Pinecone Assistant."""
+    try:
+        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        models = manager.get_available_models()
+        
+        click.echo("🤖 Available LLM Models for Pinecone Assistant:")
+        click.echo("=" * 50)
+        
+        model_descriptions = {
+            "deepseek-reasoner": "DeepSeek Reasoner (default) - Exceptional reasoning, perfect for philosophy",
+            "deepseek-chat": "DeepSeek Chat - Strong performance, good for coding and technical tasks",
+            "claude-3-5-sonnet": "Anthropic Claude 3.5 Sonnet - Excellent reasoning, good for analysis",
+            "gpt-4o": "OpenAI GPT-4o - High performance, good for general tasks",
+            "gpt-4o-mini": "OpenAI GPT-4o Mini - Faster, cost-effective for simpler tasks"
+        }
+        
+        for model in models:
+            description = model_descriptions.get(model, "No description available")
+            click.echo(f"  • {model}")
+            click.echo(f"    {description}")
+            click.echo()
+        
+        click.echo("💡 Use the --model option when creating assistants:")
+        click.echo("   rag-cli assistants create my-assistant Idealismus --model deepseek-reasoner")
+        click.echo("   (or omit --model to use deepseek-reasoner by default)")
+        
+    except Exception as e:
+        click.echo(f"❌ Error listing models: {str(e)}", err=True)
+        sys.exit(1)
+
+@assistants_group.command('list')
+@click.option('--output-format', type=click.Choice(['table', 'json', 'csv']), default='table',
+              help='Output format for assistant list')
+@click.option('--output-file', help='Save output to file')
+def assistants_list(output_format: str, output_file: Optional[str]):
+    """List all Pinecone assistants."""
+    try:
+        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        assistants = manager.list_assistants()
+        
+        if not assistants:
+            click.echo("📭 No assistants found.")
+            return
+        
+        # Process data for display
+        for assistant in assistants:
+            # Handle None values that could cause formatting errors
+            assistant['name'] = assistant.get('name') or 'Unknown'
+            assistant['status'] = assistant.get('status') or 'Unknown'
+            assistant['created_on'] = assistant.get('created_on') or 'Unknown'
+            # Default to deepseek-reasoner if no model specified
+            assistant['model'] = assistant.get('model') or 'deepseek-reasoner'
+        
+        if output_format == 'table':
+            # Display as table
+            click.echo(f"🤖 Found {len(assistants)} assistants:")
+            click.echo()
+            
+            # Calculate column widths
+            name_width = max(len(a['name']) for a in assistants) + 2
+            status_width = max(len(a['status']) for a in assistants) + 2
+            model_width = max(len(a['model']) for a in assistants) + 2
+            date_width = 20
+            
+            # Header
+            header = f"{'Name':<{name_width}} {'Status':<{status_width}} {'Model':<{model_width}} {'Created':<{date_width}}"
+            click.echo(header)
+            click.echo("-" * len(header))
+            
+            # Rows
+            for assistant in assistants:
+                created_date = assistant['created_on']
+                if created_date != 'Unknown' and 'T' in created_date:
+                    # Format datetime
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(created_date.replace('Z', '+00:00'))
+                        created_date = dt.strftime('%Y-%m-%d %H:%M')
+                    except:
+                        pass
+                
+                row = f"{assistant['name']:<{name_width}} {assistant['status']:<{status_width}} {assistant['model']:<{model_width}} {created_date:<{date_width}}"
+                click.echo(row)
+                
+        elif output_format == 'json':
+            output_data = json.dumps(assistants, indent=2)
+            click.echo(output_data)
+            
+        elif output_format == 'csv':
+            import csv
+            import io
+            
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=['name', 'status', 'model', 'created_on'])
+            writer.writeheader()
+            writer.writerows(assistants)
+            output_data = output.getvalue()
+            click.echo(output_data)
+        
+        # Save to file if requested
+        if output_file:
+            with open(output_file, 'w') as f:
+                if output_format == 'json':
+                    json.dump(assistants, f, indent=2)
+                elif output_format == 'csv':
+                    import csv
+                    writer = csv.DictWriter(f, fieldnames=['name', 'status', 'model', 'created_on'])
+                    writer.writeheader()
+                    writer.writerows(assistants)
+                else:  # table
+                    f.write("Name,Status,Model,Created\n")
+                    for assistant in assistants:
+                        f.write(f"{assistant['name']},{assistant['status']},{assistant['model']},{assistant['created_on']}\n")
+            
+            click.echo(f"💾 Output saved to: {output_file}")
+        
+    except Exception as e:
+        click.echo(f"❌ Error listing assistants: {str(e)}", err=True)
+        sys.exit(1)
+
+@assistants_group.command('create')
+@click.argument('name')
+@click.argument('worldview', type=click.Choice(['Idealismus', 'Materialismus', 'Realismus', 'Spiritualismus']))
+@click.option('--model', type=click.Choice(['deepseek-reasoner', 'deepseek-chat', 'claude-3-5-sonnet', 'gpt-4o', 'gpt-4o-mini']), 
+              help='LLM model to use for the assistant (default: deepseek-reasoner)')
+@click.option('--instructions-file', help='Path to file containing custom instructions')
+@click.option('--dry-run/--no-dry-run', default=False, help='Show what would be created without actually creating')
+def assistants_create(name: str, worldview: str, model: Optional[str], instructions_file: Optional[str], dry_run: bool):
+    """Create a new philosophical assistant.
+    
+    NAME: Name for the assistant
+    WORLDVIEW: Philosophical worldview (Idealismus, Materialismus, Realismus, Spiritualismus)
+    """
+    try:
+        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        from assistants.common_instructions import compose_instructions
+        
+        click.echo(f"Creating assistant: {name}")
+        click.echo(f"Worldview: {worldview}")
+        if model:
+            click.echo(f"Model: {model}")
+        else:
+            click.echo(f"Model: default (will use Pinecone's default LLM)")
+        
+        if dry_run:
+            click.echo("🔍 DRY RUN - No assistant will be created")
+        
+        # Load configuration for the worldview
+        config_path = f"assistants/config/{worldview.lower()}.json"
+        if not os.path.exists(config_path):
+            click.echo(f"❌ Configuration file not found: {config_path}", err=True)
+            return
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        # Use custom instructions if provided
+        if instructions_file:
+            if not os.path.exists(instructions_file):
+                click.echo(f"❌ Instructions file not found: {instructions_file}", err=True)
+                return
+            
+            with open(instructions_file, 'r', encoding='utf-8') as f:
+                instructions = f.read().strip()
+            click.echo(f"📝 Using custom instructions from: {instructions_file}")
+        else:
+            # Use instructions from config
+            instructions = config.get("instructions", "")
+            click.echo(f"📝 Using instructions from config")
+        
+        # Compose full instructions (includes common instructions)
+        full_instructions = compose_instructions(worldview, instructions)
+        
+        if dry_run:
+            click.echo("\n" + "="*50)
+            click.echo("PROPOSED ASSISTANT CONFIGURATION:")
+            click.echo("="*50)
+            click.echo(f"Name: {name}")
+            click.echo(f"Worldview: {worldview}")
+            click.echo(f"Model: {model or 'default'}")
+            click.echo(f"Instructions length: {len(full_instructions)} characters")
+            click.echo("\nInstructions preview:")
+            click.echo("-" * 30)
+            click.echo(full_instructions[:200] + "..." if len(full_instructions) > 200 else full_instructions)
+            click.echo("-" * 30)
+            click.echo("\n✅ Dry run complete - no assistant created")
+            return
+        
+        # Create the assistant
+        manager = PineconeAssistantManager()
+        
+        with click.progressbar(length=100, label='Creating assistant') as bar:
+            bar.update(25)
+            
+            assistant_info = manager.create_philosophical_assistant(
+                name=name,
+                instructions=full_instructions,
+                worldview=worldview,
+                model=model
+            )
+            bar.update(100)
+        
+        click.echo(f"✅ Successfully created assistant: {name}")
+        click.echo(f"📊 Worldview: {worldview}")
+        if model:
+            click.echo(f"🤖 Model: {model}")
+        click.echo(f"📝 Instructions: {len(full_instructions)} characters")
+        
+        # Save assistant info to a summary file
+        summary_file = f"logs/assistant_created_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        os.makedirs("logs", exist_ok=True)
+        
+        summary_data = {
+            "name": name,
+            "worldview": worldview,
+            "model": model,
+            "created_at": datetime.now().isoformat(),
+            "instructions_length": len(full_instructions),
+            "config_file": config_path
+        }
+        
+        with open(summary_file, 'w') as f:
+            json.dump(summary_data, f, indent=2)
+        
+        click.echo(f"📄 Summary saved to: {summary_file}")
+        
+    except Exception as e:
+        click.echo(f"❌ Error creating assistant: {str(e)}", err=True)
+        logger.error(f"Error creating assistant: {str(e)}")
+        sys.exit(1)
+
+@assistants_group.command('delete')
+@click.argument('name')
+@click.confirmation_option(prompt='Are you sure you want to delete this assistant?')
+def assistants_delete(name: str):
+    """Delete a Pinecone assistant."""
+    try:
+        # Import the assistant manager
+        sys.path.insert(0, PROJECT_ROOT)
+        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        
+        click.echo(f"Deleting assistant: {name}")
+        
+        success = manager.delete_assistant(name)
+        
+        if success:
+            click.echo(f"✅ Successfully deleted assistant: {name}")
+            
+            # Save deletion log
+            log_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "action": "delete",
+                "assistant_name": name,
+                "success": True
+            }
+            
+            log_file = os.path.join(log_dir, f"assistant_deletion_{datetime.now().strftime('%Y%m%d')}.log")
+            with open(log_file, 'a') as f:
+                f.write(json.dumps(log_entry) + "\n")
+        else:
+            click.echo(f"❌ Failed to delete assistant: {name}", err=True)
+            sys.exit(1)
+        
+    except Exception as e:
+        click.echo(f"Error deleting assistant: {str(e)}", err=True)
+        sys.exit(1)
+
+@assistants_group.command('chat')
+@click.argument('assistant-name')
+@click.argument('message')
+@click.option('--interactive/--no-interactive', default=False, help='Start interactive chat session')
+@click.option('--history-file', help='File to save/load chat history')
+def assistants_chat(assistant_name: str, message: str, interactive: bool, history_file: Optional[str]):
+    """Chat with a Pinecone assistant."""
+    try:
+        # Import the assistant manager
+        sys.path.insert(0, PROJECT_ROOT)
+        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        
+        # Get the assistant
+        assistant = manager.pc.assistant.Assistant(assistant_name=assistant_name)
+        
+        # Load chat history if file provided
+        chat_history = []
+        if history_file and os.path.exists(history_file):
+            with open(history_file, 'r', encoding='utf-8') as f:
+                chat_history = json.load(f)
+        
+        if not interactive:
+            # Single message
+            click.echo(f"💬 Chatting with {assistant_name}...")
+            response = manager.chat_with_assistant(
+                assistant=assistant,
+                message=message,
+                chat_history=chat_history
+            )
+            
+            click.echo(f"\n🤖 {assistant_name}:")
+            click.echo(response['message'])
+            
+            if response.get('citations'):
+                click.echo(f"\n📚 Citations: {len(response['citations'])}")
+                for i, citation in enumerate(response['citations'][:3]):  # Show first 3
+                    click.echo(f"  {i+1}. {citation}")
+            
+            # Save to history
+            chat_history.append({"role": "user", "content": message})
+            chat_history.append({"role": "assistant", "content": response['message']})
+            
+        else:
+            # Interactive session
+            click.echo(f"🚀 Starting interactive chat with {assistant_name}")
+            click.echo("Type 'quit' or 'exit' to end the session")
+            
+            # Send initial message
+            response = manager.chat_with_assistant(
+                assistant=assistant,
+                message=message,
+                chat_history=chat_history
+            )
+            
+            click.echo(f"\n🤖 {assistant_name}:")
+            click.echo(response['message'])
+            
+            chat_history.append({"role": "user", "content": message})
+            chat_history.append({"role": "assistant", "content": response['message']})
+            
+            # Interactive loop
+            while True:
+                user_input = click.prompt('\n👤 You', default='', show_default=False)
+                
+                if user_input.lower() in ['quit', 'exit', '']:
+                    break
+                
+                response = manager.chat_with_assistant(
+                    assistant=assistant,
+                    message=user_input,
+                    chat_history=chat_history
+                )
+                
+                click.echo(f"\n🤖 {assistant_name}:")
+                click.echo(response['message'])
+                
+                chat_history.append({"role": "user", "content": user_input})
+                chat_history.append({"role": "assistant", "content": response['message']})
+        
+        # Save chat history
+        if history_file:
+            with open(history_file, 'w', encoding='utf-8') as f:
+                json.dump(chat_history, f, indent=2, ensure_ascii=False)
+            click.echo(f"\n💾 Chat history saved to {history_file}")
+        
+    except Exception as e:
+        click.echo(f"Error chatting with assistant: {str(e)}", err=True)
+        sys.exit(1)
+
+@assistants_group.command('list-files')
+@click.argument('assistant-name')
+@click.option('--output-format', type=click.Choice(['table', 'json']), default='table',
+              help='Output format')
+@click.option('--output-file', help='Save output to file')
+def assistants_list_files(assistant_name: str, output_format: str, output_file: Optional[str]):
+    """List files/documents uploaded to an assistant."""
+    try:
+        # Import the assistant manager  
+        sys.path.insert(0, PROJECT_ROOT)
+        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        assistant = manager.pc.assistant.Assistant(assistant_name=assistant_name)
+        
+        # Get assistant files (this may need to be implemented in the manager)
+        # Using a placeholder method since Pinecone Assistant API file listing might vary
+        try:
+            files = assistant.list_files() if hasattr(assistant, 'list_files') else []
+        except:
+            files = []
+        
+        if not files:
+            click.echo(f"No files found for assistant: {assistant_name}")
+            return
+        
+        # Format output
+        if output_format == 'table':
+            click.echo(f"\nFiles for assistant '{assistant_name}':")
+            click.echo("-" * 80)
+            click.echo(f"{'File ID':<20} {'Filename':<30} {'Status':<15} {'Size':<10}")
+            click.echo("-" * 80)
+            for file_info in files:
+                click.echo(f"{file_info.get('id', 'N/A'):<20} {file_info.get('filename', 'N/A'):<30} {file_info.get('status', 'N/A'):<15} {file_info.get('size', 'N/A'):<10}")
+        else:  # json
+            output = json.dumps(files, indent=2)
+            click.echo(output)
+        
+        # Save to file if requested
+        if output_file:
+            with open(output_file, 'w') as f:
+                if output_format == 'json':
+                    json.dump(files, f, indent=2)
+                else:  # table
+                    f.write(f"Files for assistant '{assistant_name}':\n")
+                    f.write("-" * 80 + "\n")
+                    f.write(f"{'File ID':<20} {'Filename':<30} {'Status':<15} {'Size':<10}\n")
+                    f.write("-" * 80 + "\n")
+                    for file_info in files:
+                        f.write(f"{file_info.get('id', 'N/A'):<20} {file_info.get('filename', 'N/A'):<30} {file_info.get('status', 'N/A'):<15} {file_info.get('size', 'N/A'):<10}\n")
+            
+            click.echo(f"Output saved to {output_file}")
+        
+    except Exception as e:
+        click.echo(f"Error listing files for assistant: {str(e)}", err=True)
+        sys.exit(1)
+
+@assistants_group.command('add-files')
+@click.argument('assistant-name')
+@click.argument('file-paths', nargs=-1, required=True)
+@click.option('--worldview', help='Worldview metadata for files')
+@click.option('--batch-size', type=int, default=5, help='Number of files to upload in parallel')
+@click.option('--dry-run/--no-dry-run', default=False, help='Show what would be uploaded')
+def assistants_add_files(assistant_name: str, file_paths: tuple, worldview: Optional[str], 
+                        batch_size: int, dry_run: bool):
+    """Add files/documents to an assistant."""
+    try:
+        # Import the assistant manager
+        sys.path.insert(0, PROJECT_ROOT)
+        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        assistant = manager.pc.assistant.Assistant(assistant_name=assistant_name)
+        
+        # Validate files exist
+        valid_files = []
+        for file_path in file_paths:
+            if os.path.exists(file_path):
+                valid_files.append(file_path)
+            else:
+                click.echo(f"Warning: File not found: {file_path}", err=True)
+        
+        if not valid_files:
+            click.echo("No valid files to upload.", err=True)
+            sys.exit(1)
+        
+        if dry_run:
+            click.echo(f"Would upload {len(valid_files)} files to assistant '{assistant_name}':")
+            for file_path in valid_files:
+                file_size = os.path.getsize(file_path)
+                click.echo(f"  - {file_path} ({file_size} bytes)")
+            return
+        
+        click.echo(f"Uploading {len(valid_files)} files to assistant '{assistant_name}'...")
+        
+        # Prepare documents list
+        documents = []
+        for file_path in valid_files:
+            doc_metadata = {"source": file_path}
+            if worldview:
+                doc_metadata["worldview"] = worldview
+            
+            documents.append({
+                "path": file_path,
+                "metadata": doc_metadata
+            })
+        
+        # Upload files
+        with click.progressbar(documents, label='Uploading files') as bar:
+            upload_results = []
+            for doc in bar:
+                try:
+                    result = manager.upload_documents_to_assistant(
+                        assistant=assistant,
+                        documents=[doc],
+                        worldview=worldview or "Unknown"
+                    )
+                    upload_results.extend(result)
+                except Exception as e:
+                    upload_results.append({
+                        "file": doc["path"],
+                        "status": "error",
+                        "error": str(e)
+                    })
+        
+        # Show results
+        successful = sum(1 for r in upload_results if r["status"] == "success")
+        failed = sum(1 for r in upload_results if r["status"] == "error")
+        
+        click.echo(f"\nUpload complete: {successful} successful, {failed} failed")
+        
+        if failed > 0:
+            click.echo("\nFailed uploads:")
+            for result in upload_results:
+                if result["status"] == "error":
+                    click.echo(f"  ❌ {result['file']}: {result['error']}")
+        
+        # Save upload log
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "action": "add_files",
+            "assistant_name": assistant_name,
+            "files_uploaded": len(valid_files),
+            "successful": successful,
+            "failed": failed,
+            "worldview": worldview
+        }
+        
+        log_file = os.path.join(log_dir, f"assistant_file_upload_{datetime.now().strftime('%Y%m%d')}.log")
+        with open(log_file, 'a') as f:
+            f.write(json.dumps(log_entry) + "\n")
+        
+    except Exception as e:
+        click.echo(f"Error adding files to assistant: {str(e)}", err=True)
+        sys.exit(1)
+
+@assistants_group.command('remove-files')
+@click.argument('assistant-name')
+@click.argument('file-ids', nargs=-1, required=True)
+@click.confirmation_option(prompt='Are you sure you want to remove these files?')
+def assistants_remove_files(assistant_name: str, file_ids: tuple):
+    """Remove files/documents from an assistant."""
+    try:
+        # Import the assistant manager
+        sys.path.insert(0, PROJECT_ROOT)
+        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        assistant = manager.pc.assistant.Assistant(assistant_name=assistant_name)
+        
+        click.echo(f"Removing {len(file_ids)} files from assistant '{assistant_name}'...")
+        
+        successful = 0
+        failed = 0
+        
+        for file_id in file_ids:
+            try:
+                # This would need to be implemented based on Pinecone Assistant API
+                if hasattr(assistant, 'delete_file'):
+                    assistant.delete_file(file_id)
+                    click.echo(f"✅ Removed file: {file_id}")
+                    successful += 1
+                else:
+                    click.echo(f"⚠️ File removal not supported by Pinecone Assistant API")
+                    break
+            except Exception as e:
+                click.echo(f"❌ Failed to remove file {file_id}: {str(e)}", err=True)
+                failed += 1
+        
+        click.echo(f"\nFile removal complete: {successful} successful, {failed} failed")
+        
+        # Save removal log
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "action": "remove_files",
+            "assistant_name": assistant_name,
+            "files_removed": len(file_ids),
+            "successful": successful,
+            "failed": failed
+        }
+        
+        log_file = os.path.join(log_dir, f"assistant_file_removal_{datetime.now().strftime('%Y%m%d')}.log")
+        with open(log_file, 'a') as f:
+            f.write(json.dumps(log_entry) + "\n")
+        
+    except Exception as e:
+        click.echo(f"Error removing files from assistant: {str(e)}", err=True)
+        sys.exit(1)
+
+@assistants_group.command('context')
+@click.argument('assistant-name')
+@click.argument('query')
+@click.option('--top-k', type=int, default=5, help='Number of context snippets to return')
+@click.option('--worldview-filter', help='Filter by worldview metadata')
+@click.option('--output-file', help='Save context results to file')
+def assistants_context(assistant_name: str, query: str, top_k: int, 
+                      worldview_filter: Optional[str], output_file: Optional[str]):
+    """Query an assistant for context without generating a response."""
+    try:
+        # Import the assistant manager
+        sys.path.insert(0, PROJECT_ROOT)
+        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        assistant = manager.pc.assistant.Assistant(assistant_name=assistant_name)
+        
+        # Prepare metadata filter
+        metadata_filter = {}
+        if worldview_filter:
+            metadata_filter["worldview"] = worldview_filter
+        
+        click.echo(f"🔍 Querying context from assistant '{assistant_name}'...")
+        click.echo(f"Query: {query}")
+        
+        response = manager.query_with_context(
+            assistant=assistant,
+            query=query,
+            metadata_filter=metadata_filter if metadata_filter else None
+        )
+        
+        snippets = response['snippets'][:top_k]
+        
+        click.echo(f"\n📄 Found {len(snippets)} context snippets:")
+        click.echo("-" * 80)
+        
+        for i, snippet in enumerate(snippets, 1):
+            click.echo(f"\nSnippet {i} (Score: {snippet['score']:.3f}):")
+            click.echo(f"Content: {snippet['content'][:200]}...")
+            if snippet.get('metadata'):
+                click.echo(f"Metadata: {snippet['metadata']}")
+        
+        # Save to file if requested
+        if output_file:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump({
+                    "query": query,
+                    "assistant_name": assistant_name,
+                    "metadata_filter": metadata_filter,
+                    "snippets": snippets,
+                    "timestamp": datetime.now().isoformat()
+                }, f, indent=2, ensure_ascii=False)
+            
+            click.echo(f"\n💾 Context results saved to {output_file}")
+        
+    except Exception as e:
+        click.echo(f"Error querying context: {str(e)}", err=True)
+        sys.exit(1)
+
 if __name__ == '__main__':
     cli() 

@@ -1,26 +1,30 @@
 """
-Philosophical Assistants Package
+Philosophical Assistants Module
 
-This package provides integration of philosophical assistants with the RAG system.
-Each assistant represents a distinct philosophical worldview:
-1. Idealismus - Represented by Aurelian I. Schelling
-2. Materialismus - Represented by Aloys I. Freud
-3. Realismus - Represented by Arvid I. Steiner
-4. Spiritualismus - Represented by Amara I. Steiner
+This module provides functionality for managing philosophical assistants
+across different worldviews using various backends including custom implementations
+and Pinecone Assistant API.
 """
 
+# Existing custom assistant functionality
+from .common_instructions import compose_instructions, extract_worldview_instructions
 from .pinecone_integration import AssistantManager, PineconeClient, EmbeddingClient
 from .template_processor import TemplateProcessor
-from .api_extensions import register_router
-from .common_instructions import compose_instructions, extract_worldview_instructions, update_assistant_config
+
+# New Pinecone Assistant API functionality
+from .pinecone_assistant_manager import PineconeAssistantManager
 
 __all__ = [
-    'AssistantManager',
-    'PineconeClient',
-    'EmbeddingClient',
-    'TemplateProcessor',
-    'register_router',
-    'compose_instructions',
-    'extract_worldview_instructions',
-    'update_assistant_config'
+    # Common instructions
+    "compose_instructions",
+    "extract_worldview_instructions",
+    
+    # Custom assistant system
+    "AssistantManager", 
+    "PineconeClient", 
+    "EmbeddingClient",
+    "TemplateProcessor",
+    
+    # Pinecone Assistant API
+    "PineconeAssistantManager"
 ] 
