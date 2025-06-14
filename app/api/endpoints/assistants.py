@@ -4,8 +4,8 @@ from datetime import datetime
 import logging
 import time
 
-# Import Pinecone Assistant Manager (same as CLI uses)
-from assistants.pinecone_assistant_manager import PineconeAssistantManager
+# Import DeepSeek Assistant Manager (drop-in replacement for Pinecone)
+from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
 from assistants.template_processor import TemplateProcessor
 from app.models.user import TokenData
 from app.core.security import get_current_user
@@ -509,6 +509,7 @@ async def generate_philosophical_glossary(
     except Exception as e:
         logger.error(f"Error in glossary endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing glossary request: {str(e)}")
+
 
 @router.get("/weltanschauungen/list")
 async def list_weltanschauungen(
