@@ -14,7 +14,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from assistants.pinecone_assistant_manager import PineconeAssistantManager
+from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
 
 def test_pinecone_connection():
     """Test basic Pinecone connection and assistant listing."""

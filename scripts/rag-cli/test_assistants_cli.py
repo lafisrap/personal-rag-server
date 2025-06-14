@@ -27,7 +27,7 @@ class TestAssistantsListCommand:
             {"name": "aloys-i--freud", "status": "active", "created_on": "2024-01-02"},
         ]
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_list_table_format(self, mock_manager_class):
         """Test listing assistants in table format."""
         mock_manager = Mock()
@@ -42,7 +42,7 @@ class TestAssistantsListCommand:
         assert "aloys-i--freud" in result.output
         assert "active" in result.output
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_list_json_format(self, mock_manager_class):
         """Test listing assistants in JSON format."""
         mock_manager = Mock()
@@ -56,7 +56,7 @@ class TestAssistantsListCommand:
         assert len(output_data) == 2
         assert output_data[0]["name"] == "aurelian-i--schelling"
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_list_csv_format(self, mock_manager_class):
         """Test listing assistants in CSV format."""
         mock_manager = Mock()
@@ -69,7 +69,7 @@ class TestAssistantsListCommand:
         assert "name,status,created_on" in result.output
         assert "aurelian-i--schelling,active,2024-01-01" in result.output
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_list_save_to_file(self, mock_manager_class):
         """Test saving assistant list to file."""
         mock_manager = Mock()
@@ -96,7 +96,7 @@ class TestAssistantsListCommand:
         finally:
             os.unlink(output_file)
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_list_no_assistants(self, mock_manager_class):
         """Test listing when no assistants exist."""
         mock_manager = Mock()
@@ -108,7 +108,7 @@ class TestAssistantsListCommand:
         assert result.exit_code == 0
         assert "No assistants found." in result.output
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_list_error_handling(self, mock_manager_class):
         """Test error handling in list command."""
         mock_manager_class.side_effect = Exception("Connection failed")
@@ -118,7 +118,7 @@ class TestAssistantsListCommand:
         assert result.exit_code == 1
         assert "Error listing assistants: Connection failed" in result.output
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_list_with_none_values(self, mock_manager_class):
         """Test listing assistants when some fields are None."""
         mock_assistants_with_none = [
@@ -145,7 +145,7 @@ class TestAssistantsCreateCommand:
     def setup_method(self):
         self.runner = CliRunner()
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     @patch('scripts.create_pinecone_assistants.OPENAI_ASSISTANT_CONFIGS')
     def test_create_with_default_instructions(self, mock_configs, mock_manager_class):
         """Test creating assistant with default instructions."""
@@ -193,7 +193,7 @@ class TestAssistantsCreateCommand:
         assert "Worldview: Idealismus" in result.output
         assert "Instructions: Default worldview instructions" in result.output
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_create_with_custom_instructions(self, mock_manager_class):
         """Test creating assistant with custom instructions file."""
         mock_manager = Mock()
@@ -256,7 +256,7 @@ class TestAssistantsDeleteCommand:
     def setup_method(self):
         self.runner = CliRunner()
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_delete_success(self, mock_manager_class):
         """Test successful assistant deletion."""
         mock_manager = Mock()
@@ -271,7 +271,7 @@ class TestAssistantsDeleteCommand:
         assert "✅ Successfully deleted assistant: test-assistant" in result.output
         mock_manager.delete_assistant.assert_called_once_with('test-assistant')
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_delete_failure(self, mock_manager_class):
         """Test failed assistant deletion."""
         mock_manager = Mock()
@@ -301,7 +301,7 @@ class TestAssistantsChatCommand:
     def setup_method(self):
         self.runner = CliRunner()
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_chat_single_message(self, mock_manager_class):
         """Test single message chat."""
         mock_manager = Mock()
@@ -331,7 +331,7 @@ class TestAssistantsChatCommand:
         assert call_args[1]['assistant'] == mock_assistant
         assert call_args[1]['message'] == 'Hello, how are you?'
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_chat_with_history_file(self, mock_manager_class):
         """Test chat with history file."""
         mock_manager = Mock()
@@ -378,7 +378,7 @@ class TestAssistantsChatCommand:
         finally:
             os.unlink(history_file)
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_chat_error_handling(self, mock_manager_class):
         """Test chat error handling."""
         mock_manager_class.side_effect = Exception("Assistant not found")
@@ -403,7 +403,7 @@ class TestAssistantsListFilesCommand:
             {"id": "file-456", "filename": "document2.txt", "status": "processing", "size": "2048"}
         ]
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_list_files_table_format(self, mock_manager_class):
         """Test listing files in table format."""
         mock_manager = Mock()
@@ -422,7 +422,7 @@ class TestAssistantsListFilesCommand:
         assert "document1.txt" in result.output
         assert "processed" in result.output
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_list_files_no_files(self, mock_manager_class):
         """Test listing files when no files exist."""
         mock_manager = Mock()
@@ -446,7 +446,7 @@ class TestAssistantsAddFilesCommand:
     def setup_method(self):
         self.runner = CliRunner()
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_add_files_success(self, mock_manager_class):
         """Test successful file addition."""
         mock_manager = Mock()
@@ -481,7 +481,7 @@ class TestAssistantsAddFilesCommand:
             assert "successful" in result.output
             assert "0 failed" in result.output
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_add_files_dry_run(self, mock_manager_class):
         """Test add files in dry-run mode."""
         # Mock is not needed for dry-run, but add it to avoid any imports
@@ -506,7 +506,7 @@ class TestAssistantsAddFilesCommand:
             assert "Would upload 1 files to assistant 'test-assistant':" in result.output
             assert file1 in result.output
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_add_files_nonexistent_file(self, mock_manager_class):
         """Test error with nonexistent file."""
         # Mock is needed to prevent actual API calls
@@ -544,7 +544,7 @@ class TestAssistantsContextCommand:
             ]
         }
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_context_query_success(self, mock_manager_class):
         """Test successful context query."""
         mock_manager = Mock()
@@ -566,7 +566,7 @@ class TestAssistantsContextCommand:
         assert "Snippet 1 (Score: 0.950):" in result.output
         assert "This is relevant content from document 1" in result.output
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     def test_context_with_filter_and_output_file(self, mock_manager_class):
         """Test context query with worldview filter and output file."""
         mock_manager = Mock()
@@ -613,7 +613,7 @@ class TestAssistantsIntegration:
     def setup_method(self):
         self.runner = CliRunner()
     
-    @patch('assistants.pinecone_assistant_manager.PineconeAssistantManager')
+    @patch('assistants.deepseek_assistant_manager.DeepSeekAssistantManager')
     @patch('scripts.create_pinecone_assistants.OPENAI_ASSISTANT_CONFIGS')
     def test_create_and_list_workflow(self, mock_configs, mock_manager_class):
         """Test creating assistant and then listing it."""

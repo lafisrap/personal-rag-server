@@ -1495,7 +1495,7 @@ def assistants_group():
 def assistants_models():
     """Show available LLM models for Pinecone Assistant."""
     try:
-        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
         
         manager = PineconeAssistantManager()
         models = manager.get_available_models()
@@ -1532,7 +1532,7 @@ def assistants_models():
 def assistants_list(output_format: str, output_file: Optional[str]):
     """List all Pinecone assistants."""
     try:
-        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
         
         manager = PineconeAssistantManager()
         assistants = manager.list_assistants()
@@ -1631,7 +1631,7 @@ def assistants_create(name: str, worldview: str, model: Optional[str], instructi
     WORLDVIEW: Philosophical worldview (Idealismus, Materialismus, Realismus, Spiritualismus)
     """
     try:
-        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
         from assistants.common_instructions import compose_instructions
         
         click.echo(f"Creating assistant: {name}")
@@ -1736,7 +1736,7 @@ def assistants_delete(name: str):
     try:
         # Import the assistant manager
         sys.path.insert(0, PROJECT_ROOT)
-        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
         
         manager = PineconeAssistantManager()
         
@@ -1776,7 +1776,7 @@ def assistants_chat(assistant_name: str, message: str, interactive: bool, histor
     try:
         # Import the assistant manager
         sys.path.insert(0, PROJECT_ROOT)
-        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
         
         manager = PineconeAssistantManager()
         
@@ -1867,7 +1867,7 @@ def assistants_list_files(assistant_name: str, output_format: str, output_file: 
     try:
         # Import the assistant manager  
         sys.path.insert(0, PROJECT_ROOT)
-        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
         
         manager = PineconeAssistantManager()
         assistant = manager.pc.assistant.Assistant(assistant_name=assistant_name)
@@ -1926,7 +1926,7 @@ def assistants_add_files(assistant_name: str, file_paths: tuple, worldview: Opti
     try:
         # Import the assistant manager
         sys.path.insert(0, PROJECT_ROOT)
-        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
         
         manager = PineconeAssistantManager()
         assistant = manager.pc.assistant.Assistant(assistant_name=assistant_name)
@@ -2022,7 +2022,7 @@ def assistants_remove_files(assistant_name: str, file_ids: tuple):
     try:
         # Import the assistant manager
         sys.path.insert(0, PROJECT_ROOT)
-        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
         
         manager = PineconeAssistantManager()
         assistant = manager.pc.assistant.Assistant(assistant_name=assistant_name)
@@ -2078,7 +2078,7 @@ def assistants_context(assistant_name: str, query: str, top_k: int,
     try:
         # Import the assistant manager
         sys.path.insert(0, PROJECT_ROOT)
-        from assistants.pinecone_assistant_manager import PineconeAssistantManager
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
         
         manager = PineconeAssistantManager()
         assistant = manager.pc.assistant.Assistant(assistant_name=assistant_name)
