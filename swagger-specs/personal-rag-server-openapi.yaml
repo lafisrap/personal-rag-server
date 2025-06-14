@@ -257,45 +257,97 @@ components:
             properties:
                 id:
                     type: string
+                    description: Assistant identifier
+                object:
+                    type: string
+                    default: 'assistant'
+                    description: Object type
                 name:
                     type: string
+                    description: Assistant name
                 description:
                     type: string
+                    nullable: true
+                    description: Assistant description
                 model:
                     type: string
+                    description: LLM model used by assistant
                 instructions:
                     type: string
+                    nullable: true
+                    description: Assistant instructions
                 weltanschauung:
                     type: string
+                    nullable: true
                     enum: [Idealismus, Materialismus, Realismus, Spiritualismus]
-                temperature:
-                    type: number
-                    format: float
-                    minimum: 0
-                    maximum: 2
-                top_p:
-                    type: number
-                    format: float
-                    minimum: 0
-                    maximum: 1
-                created_at:
-                    type: string
-                    format: date-time
-                updated_at:
-                    type: string
-                    format: date-time
+                    description: Philosophical worldview
                 status:
                     type: string
-                    enum: [Ready, Initializing, Failed]
+                    description: Assistant status
+                created_at:
+                    type: string
+                    description: Creation timestamp
                 metadata:
                     type: object
                     additionalProperties: true
+                    nullable: true
+                    description: Additional metadata
+                capabilities:
+                    $ref: '#/components/schemas/AssistantCapabilities'
+                    nullable: true
+                    description: Assistant capabilities
             required:
                 - id
+                - object
                 - name
-                - weltanschauung
                 - model
                 - status
+                - created_at
+
+        AssistantCapabilities:
+            type: object
+            properties:
+                templates:
+                    type: array
+                    items:
+                        type: string
+                        enum: [resolve, reformulate, glossary]
+                max_context_length:
+                    type: integer
+                supported_languages:
+                    type: array
+                    items:
+                        type: string
+                        enum: [de, en]
+
+        AssistantListResponse:
+            type: object
+            properties:
+                object:
+                    type: string
+                    default: 'list'
+                    description: Object type
+                data:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Assistant'
+                    description: List of assistants
+                first_id:
+                    type: string
+                    nullable: true
+                    description: First assistant ID
+                last_id:
+                    type: string
+                    nullable: true
+                    description: Last assistant ID
+                has_more:
+                    type: boolean
+                    default: false
+                    description: Whether there are more assistants
+            required:
+                - object
+                - data
+                - has_more
 
         AssistantCreate:
             type: object
@@ -306,7 +358,7 @@ components:
                     type: string
                 model:
                     type: string
-                    default: 'o1'
+                    default: 'deepseek-reasoner'
                 instructions:
                     type: string
                 weltanschauung:
@@ -386,6 +438,160 @@ components:
             required:
                 - response
 
+        # Phase 4 Template Endpoint Schemas
+        ResolveRequest:
+            type: object
+            properties:
+                gedanke_in_weltanschauung:
+                    type: string
+                    maxLength: 500
+                    description: The philosophical misconception to correct
+                    example: 'Geld macht glücklich'
+                aspekte:
+                    type: string
+                    maxLength: 200
+                    description: Optional specific aspects to consider in the correction
+                    example: 'materielle Sicherheit, soziale Beziehungen'
+            required:
+                - gedanke_in_weltanschauung
+
+        ResolveResponse:
+            type: object
+            properties:
+                gedanke:
+                    type: string
+                    description: 300-word philosophical correction
+                gedanke_zusammenfassung:
+                    type: string
+                    description: Brief summary of the correction
+                gedanke_kind:
+                    type: string
+                    description: Child-friendly explanation (10-year-old level)
+                assistant_id:
+                    type: string
+                weltanschauung:
+                    type: string
+                processing_time:
+                    type: number
+                    format: float
+            required:
+                - gedanke
+                - gedanke_zusammenfassung
+                - gedanke_kind
+                - assistant_id
+                - weltanschauung
+
+        ReformulateRequest:
+            type: object
+            properties:
+                gedanke:
+                    type: string
+                    maxLength: 200
+                    description: The original thought to reformulate
+                    example: 'Bewusstsein ist nur ein Nebenprodukt des Gehirns'
+                stichwort:
+                    type: string
+                    maxLength: 100
+                    description: Comma-separated keywords to incorporate
+                    example: 'Emergenz, Komplexität, Reduktionismus'
+            required:
+                - gedanke
+                - stichwort
+
+        ReformulateResponse:
+            type: object
+            properties:
+                gedanken_in_weltanschauung:
+                    type: array
+                    items:
+                        type: string
+                    minItems: 3
+                    maxItems: 3
+                    description: Three reformulated variations (max 20 words each)
+                gedanke:
+                    type: string
+                    description: Original thought (echoed back)
+                assistant_id:
+                    type: string
+                weltanschauung:
+                    type: string
+                processing_time:
+                    type: number
+                    format: float
+            required:
+                - gedanken_in_weltanschauung
+                - gedanke
+                - assistant_id
+                - weltanschauung
+
+        GlossaryRequest:
+            type: object
+            properties:
+                korrektur:
+                    type: string
+                    maxLength: 1000
+                    description: Text to extract concepts from (when using text input)
+                    example: 'Die Phänomenologie untersucht das Bewusstsein und seine intentionalen Strukturen'
+                begriffe:
+                    type: array
+                    items:
+                        type: string
+                    maxItems: 5
+                    description: Specific concepts to define (when using direct input)
+                    example:
+                        ['Bewusstsein', 'Intentionalität', 'Phänomenologie']
+            oneOf:
+                - required: [korrektur]
+                - required: [begriffe]
+
+        GlossaryResponse:
+            type: object
+            properties:
+                glossar:
+                    type: array
+                    items:
+                        type: object
+                        properties:
+                            begriff:
+                                type: string
+                                description: The philosophical concept
+                            beschreibung:
+                                type: string
+                                description: 50-80 word explanation from worldview perspective
+                        required:
+                            - begriff
+                            - beschreibung
+                    minItems: 1
+                    maxItems: 5
+                assistant_id:
+                    type: string
+                weltanschauung:
+                    type: string
+                processing_time:
+                    type: number
+                    format: float
+            required:
+                - glossar
+                - assistant_id
+                - weltanschauung
+
+        ErrorResponse:
+            type: object
+            properties:
+                error:
+                    type: string
+                    description: Error type
+                message:
+                    type: string
+                    description: Human-readable error message
+                details:
+                    type: object
+                    additionalProperties: true
+                    description: Additional error details
+            required:
+                - error
+                - message
+
 paths:
     /:
         get:
@@ -448,7 +654,7 @@ paths:
                 - status
             responses:
                 '200':
-                    description: Successful response
+                    description: Application information including security and feature details
                     content:
                         application/json:
                             schema:
@@ -456,14 +662,69 @@ paths:
                                 properties:
                                     name:
                                         type: string
+                                        description: Project name
                                     version:
                                         type: string
+                                        description: Application version
                                     environment:
                                         type: string
+                                        description: Runtime environment
                                     security:
                                         type: object
+                                        properties:
+                                            authentication:
+                                                type: string
+                                                description: Authentication method
+                                            authorization:
+                                                type: string
+                                                description: Authorization method
+                                            rate_limiting:
+                                                type: string
+                                                description: Rate limiting status
+                                            cors:
+                                                type: string
+                                                description: CORS configuration status
+                                            security_headers:
+                                                type: boolean
+                                                description: Security headers enabled
                                     features:
                                         type: object
+                                        properties:
+                                            rag_system:
+                                                type: string
+                                                description: RAG system status
+                                            vector_db:
+                                                type: string
+                                                description: Vector database type
+                                            llm_provider:
+                                                type: string
+                                                description: LLM provider
+                                            embeddings_model:
+                                                type: string
+                                                description: Embeddings model used
+                                            user_management:
+                                                type: string
+                                                description: User management status
+                                            api_keys:
+                                                type: string
+                                                description: API keys feature status
+                                example:
+                                    name: 'Personal RAG Server'
+                                    version: '1.0.0'
+                                    environment: 'production'
+                                    security:
+                                        authentication: 'JWT + API Keys'
+                                        authorization: 'RBAC'
+                                        rate_limiting: 'Enabled'
+                                        cors: 'Configured'
+                                        security_headers: true
+                                    features:
+                                        rag_system: 'Enabled'
+                                        vector_db: 'pinecone'
+                                        llm_provider: 'deepseek'
+                                        embeddings_model: 'multilingual-e5-large'
+                                        user_management: 'Enabled'
+                                        api_keys: 'Enabled'
 
     /auth/login:
         post:
@@ -674,18 +935,15 @@ paths:
             operationId: validate_password
             tags:
                 - utilities
-            requestBody:
-                required: true
-                content:
-                    application/json:
-                        schema:
-                            type: object
-                            properties:
-                                password:
-                                    type: string
-                                    format: password
-                            required:
-                                - password
+            parameters:
+                - name: password
+                  in: query
+                  required: true
+                  schema:
+                      type: string
+                      format: password
+                  description: The password to validate
+                  example: 'MySecurePass123!'
             responses:
                 '200':
                     description: Password validation result
@@ -700,6 +958,17 @@ paths:
                                         type: string
                                     requirements:
                                         type: object
+                                        properties:
+                                            min_length:
+                                                type: integer
+                                            require_uppercase:
+                                                type: boolean
+                                            require_lowercase:
+                                                type: boolean
+                                            require_numbers:
+                                                type: boolean
+                                            require_special:
+                                                type: boolean
 
     /rag/query:
         post:
@@ -785,30 +1054,9 @@ paths:
                 '500':
                     description: Search failed
 
-    /health/health:
-        get:
-            summary: Health check endpoint that includes embedding model status
-            operationId: health_check_api
-            tags:
-                - health
-            responses:
-                '200':
-                    description: Health check result
-                    content:
-                        application/json:
-                            schema:
-                                type: object
-                                properties:
-                                    status:
-                                        type: string
-                                    api_version:
-                                        type: string
-                                    embedding_service:
-                                        type: object
-
     /assistants:
         get:
-            summary: List all assistants
+            summary: List all assistants with optional filtering and capabilities
             operationId: list_assistants
             tags:
                 - assistants
@@ -824,45 +1072,59 @@ paths:
                       enum:
                           [Idealismus, Materialismus, Realismus, Spiritualismus]
                   description: Filter assistants by weltanschauung
+                  example: Idealismus
+                - name: status
+                  in: query
+                  required: false
+                  schema:
+                      type: string
+                      enum: [Ready, Initializing, Failed]
+                  description: Filter assistants by status
+                  example: Ready
+                - name: include_capabilities
+                  in: query
+                  required: false
+                  schema:
+                      type: boolean
+                      default: false
+                  description: Include template capabilities in response
+                  example: true
             responses:
                 '200':
-                    description: List of assistants
+                    description: List of assistants with capabilities
                     content:
                         application/json:
                             schema:
-                                type: array
-                                items:
-                                    $ref: '#/components/schemas/Assistant'
+                                $ref: '#/components/schemas/AssistantListResponse'
+                            example:
+                                object: 'list'
+                                data:
+                                    - id: 'aurelian-i--schelling'
+                                      object: 'assistant'
+                                      name: 'aurelian-i--schelling'
+                                      description: 'Philosophical assistant for Idealism worldview - focuses on ideas as primary reality'
+                                      model: 'deepseek-reasoner'
+                                      instructions: 'Philosophical assistant with specialized worldview knowledge'
+                                      weltanschauung: 'Idealismus'
+                                      status: 'Ready'
+                                      created_at: '2024-01-15T10:30:00Z'
+                                      metadata:
+                                          worldview: 'Idealismus'
+                                          created_by: 'pinecone-assistant-api'
+                                      capabilities:
+                                          templates:
+                                              [
+                                                  'resolve',
+                                                  'reformulate',
+                                                  'glossary',
+                                              ]
+                                          max_context_length: 8192
+                                          supported_languages: ['de', 'en']
+                                first_id: 'aurelian-i--schelling'
+                                last_id: 'aurelian-i--schelling'
+                                has_more: false
                 '401':
                     description: Unauthorized
-
-        post:
-            summary: Create a new assistant
-            operationId: create_assistant
-            tags:
-                - assistants
-            security:
-                - bearerAuth: []
-                - apiKeyAuth: []
-            requestBody:
-                required: true
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/AssistantCreate'
-            responses:
-                '201':
-                    description: Assistant created successfully
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Assistant'
-                '400':
-                    description: Invalid request
-                '401':
-                    description: Unauthorized
-                '500':
-                    description: Failed to create assistant
 
     /assistants/{assistant_id}:
         get:
@@ -879,6 +1141,7 @@ paths:
                   required: true
                   schema:
                       type: string
+                  example: 'aurelian-i--schelling'
             responses:
                 '200':
                     description: Assistant details
@@ -891,44 +1154,8 @@ paths:
                 '404':
                     description: Assistant not found
 
-        put:
-            summary: Update an assistant
-            operationId: update_assistant
-            tags:
-                - assistants
-            security:
-                - bearerAuth: []
-                - apiKeyAuth: []
-            parameters:
-                - name: assistant_id
-                  in: path
-                  required: true
-                  schema:
-                      type: string
-            requestBody:
-                required: true
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/AssistantUpdate'
-            responses:
-                '200':
-                    description: Assistant updated successfully
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Assistant'
-                '400':
-                    description: Invalid request
-                '401':
-                    description: Unauthorized
-                '404':
-                    description: Assistant not found
-                '500':
-                    description: Failed to update assistant
-
         delete:
-            summary: Delete an assistant
+            summary: Delete a Pinecone assistant
             operationId: delete_assistant
             tags:
                 - assistants
@@ -941,6 +1168,7 @@ paths:
                   required: true
                   schema:
                       type: string
+                  example: 'aurelian-i--schelling'
             responses:
                 '200':
                     description: Assistant deleted successfully
@@ -949,8 +1177,21 @@ paths:
                             schema:
                                 type: object
                                 properties:
-                                    message:
+                                    id:
                                         type: string
+                                        description: Assistant ID
+                                    object:
+                                        type: string
+                                        default: 'assistant.deleted'
+                                        description: Object type
+                                    deleted:
+                                        type: boolean
+                                        default: true
+                                        description: Deletion status
+                                required:
+                                    - id
+                                    - object
+                                    - deleted
                 '401':
                     description: Unauthorized
                 '404':
@@ -995,9 +1236,273 @@ paths:
                 '500':
                     description: Query failed
 
-    /assistants/weltanschauungen:
+    # Phase 4 Template Endpoints
+    /assistants/{assistant_id}/resolve:
+        post:
+            summary: Correct philosophical misconceptions from assistant's worldview
+            description: |
+                Uses the gedankenfehler-formulieren template to correct philosophical misconceptions.
+                The assistant analyzes the provided thinking mistake and provides a correction
+                from their specific worldview perspective, along with a summary and child-friendly explanation.
+            operationId: resolve_philosophical_mistake
+            tags:
+                - philosophical-templates
+            security:
+                - bearerAuth: []
+                - apiKeyAuth: []
+            parameters:
+                - name: assistant_id
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+                  description: ID of the philosophical assistant
+                  example: 'aurelian-i--schelling'
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ResolveRequest'
+                        examples:
+                            basic_example:
+                                summary: Basic philosophical mistake
+                                value:
+                                    gedanke_in_weltanschauung: 'Geld macht glücklich'
+                            with_aspects:
+                                summary: With specific aspects to consider
+                                value:
+                                    gedanke_in_weltanschauung: 'Bewusstsein ist nur ein Nebenprodukt des Gehirns'
+                                    aspekte: 'Emergenz, Qualia, harte Problem des Bewusstseins'
+            responses:
+                '200':
+                    description: Philosophical correction from assistant's worldview
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ResolveResponse'
+                            example:
+                                gedanke: 'Aus Sicht des Idealismus zeigt sich, dass Geld lediglich...'
+                                gedanke_zusammenfassung: 'Wahres Glück entspringt geistigen Werten, nicht materiellem Besitz'
+                                gedanke_kind: 'Geld ist wie Spielzeug - es macht nur kurz Freude, aber Freunde und Lernen machen länger glücklich'
+                                assistant_id: 'aurelian-i--schelling'
+                                weltanschauung: 'Idealismus'
+                                processing_time: 8.5
+                '400':
+                    description: Invalid request - missing or malformed input
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                '401':
+                    description: Unauthorized
+                '404':
+                    description: Assistant not found
+                '408':
+                    description: Request timeout - processing took too long
+                '500':
+                    description: Internal server error
+
+    /assistants/{assistant_id}/reformulate:
+        post:
+            summary: Reformulate thoughts from assistant's worldview perspective
+            description: |
+                Uses the gedankenfehler-wiederholen template to reformulate a given thought
+                from the assistant's specific worldview, creating three variations that
+                incorporate specified keywords while maintaining the assistant's philosophical perspective.
+            operationId: reformulate_philosophical_thought
+            tags:
+                - philosophical-templates
+            security:
+                - bearerAuth: []
+                - apiKeyAuth: []
+            parameters:
+                - name: assistant_id
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+                  description: ID of the philosophical assistant
+                  example: 'aloys-i--freud'
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ReformulateRequest'
+                        examples:
+                            consciousness_example:
+                                summary: Consciousness reformulation
+                                value:
+                                    gedanke: 'Bewusstsein ist nur ein Nebenprodukt des Gehirns'
+                                    stichwort: 'Emergenz, Komplexität, Reduktionismus'
+                            free_will_example:
+                                summary: Free will reformulation
+                                value:
+                                    gedanke: 'Der freie Wille ist eine Illusion'
+                                    stichwort: 'Determinismus, Kausalität, Entscheidung'
+            responses:
+                '200':
+                    description: Three reformulated variations from assistant's worldview
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ReformulateResponse'
+                            example:
+                                gedanken_in_weltanschauung:
+                                    - 'Bewusstsein entsteht durch emergente Gehirnprozesse'
+                                    - 'Komplexe Neuronetzwerke erzeugen bewusste Erfahrung'
+                                    - 'Reduktionismus erklärt Bewusstsein vollständig'
+                                gedanke: 'Bewusstsein ist nur ein Nebenprodukt des Gehirns'
+                                assistant_id: 'aloys-i--freud'
+                                weltanschauung: 'Materialismus'
+                                processing_time: 6.2
+                '400':
+                    description: Invalid request
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                '401':
+                    description: Unauthorized
+                '404':
+                    description: Assistant not found
+                '500':
+                    description: Internal server error
+
+    /assistants/{assistant_id}/glossary:
+        post:
+            summary: Generate philosophical glossary from text or concepts
+            description: |
+                Uses the gedankenfehler-glossar template to create a philosophical glossary.
+                Can either extract key concepts from provided text or define specific concepts provided.
+                Definitions are given from the assistant's worldview perspective.
+            operationId: generate_philosophical_glossary
+            tags:
+                - philosophical-templates
+            security:
+                - bearerAuth: []
+                - apiKeyAuth: []
+            parameters:
+                - name: assistant_id
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+                  description: ID of the philosophical assistant
+                  example: 'arvid-i--steiner'
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/GlossaryRequest'
+                        examples:
+                            text_extraction:
+                                summary: Extract concepts from text
+                                value:
+                                    korrektur: 'Die Phänomenologie untersucht das Bewusstsein und seine intentionalen Strukturen sowie die Lebenswelt als Horizont aller Erfahrung'
+                            direct_concepts:
+                                summary: Define specific concepts
+                                value:
+                                    begriffe:
+                                        [
+                                            'Bewusstsein',
+                                            'Intentionalität',
+                                            'Phänomenologie',
+                                            'Lebenswelt',
+                                            'Erfahrung',
+                                        ]
+            responses:
+                '200':
+                    description: Philosophical glossary from assistant's worldview
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GlossaryResponse'
+                            example:
+                                glossar:
+                                    - begriff: 'Bewusstsein'
+                                      beschreibung: 'Das erkennende Ich, das sich selbst und die Welt erfasst. Im Realismus zeigt sich Bewusstsein als Einheit von Wahrnehmung und Begriff, wodurch der Mensch zur Erkenntnis der geistigen Wirklichkeit gelangen kann.'
+                                    - begriff: 'Intentionalität'
+                                      beschreibung: 'Die Gerichtetheit des Bewusstseins auf Gegenstände. Jeder Bewusstseinsakt bezieht sich auf etwas, sei es wahrgenommen, erinnert oder gedacht. Diese Struktur ermöglicht die Verbindung zwischen Subjekt und objektiver Welt.'
+                                assistant_id: 'arvid-i--steiner'
+                                weltanschauung: 'Realismus'
+                                processing_time: 12.1
+                '400':
+                    description: Invalid request - must provide either korrektur or begriffe
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                '401':
+                    description: Unauthorized
+                '404':
+                    description: Assistant not found
+                '500':
+                    description: Internal server error
+
+    /assistants/{assistant_id}/models:
         get:
-            summary: List available weltanschauungen
+            summary: Get available models for Pinecone assistants
+            operationId: get_available_models
+            tags:
+                - assistants
+            security:
+                - bearerAuth: []
+                - apiKeyAuth: []
+            parameters:
+                - name: assistant_id
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+                  example: 'aurelian-i--schelling'
+            responses:
+                '200':
+                    description: List of available models
+                    content:
+                        application/json:
+                            schema:
+                                type: object
+                                properties:
+                                    object:
+                                        type: string
+                                        default: 'list'
+                                    data:
+                                        type: array
+                                        items:
+                                            type: object
+                                            properties:
+                                                id:
+                                                    type: string
+                                                object:
+                                                    type: string
+                                                    default: 'model'
+                                                created:
+                                                    type: integer
+                                                owned_by:
+                                                    type: string
+                                                    default: 'pinecone'
+                            example:
+                                object: 'list'
+                                data:
+                                    - id: 'deepseek-reasoner'
+                                      object: 'model'
+                                      created: 1640995200
+                                      owned_by: 'pinecone'
+                                    - id: 'deepseek-chat'
+                                      object: 'model'
+                                      created: 1640995200
+                                      owned_by: 'pinecone'
+                '401':
+                    description: Unauthorized
+                '500':
+                    description: Error getting models
+
+    /assistants/weltanschauungen/list:
+        get:
+            summary: List available philosophical worldviews with their associated assistants
             operationId: list_weltanschauungen
             tags:
                 - assistants
@@ -1006,19 +1511,91 @@ paths:
                 - apiKeyAuth: []
             responses:
                 '200':
-                    description: List of available weltanschauungen
+                    description: List of available weltanschauungen with their assistants
                     content:
                         application/json:
                             schema:
-                                type: array
-                                items:
-                                    type: object
-                                    properties:
-                                        id:
-                                            type: string
-                                        name:
-                                            type: string
-                                        description:
-                                            type: string
+                                type: object
+                                properties:
+                                    object:
+                                        type: string
+                                        default: 'list'
+                                    data:
+                                        type: array
+                                        items:
+                                            type: object
+                                            properties:
+                                                id:
+                                                    type: string
+                                                    description: Worldview identifier
+                                                name:
+                                                    type: string
+                                                    description: Worldview name
+                                                description:
+                                                    type: string
+                                                    description: Worldview description
+                                                assistants:
+                                                    type: array
+                                                    description: Available assistants for this worldview
+                                                    items:
+                                                        type: object
+                                                        properties:
+                                                            id:
+                                                                type: string
+                                                                description: Assistant ID
+                                                            name:
+                                                                type: string
+                                                                description: Assistant name
+                                                            model:
+                                                                type: string
+                                                                description: Model used by assistant
+                                                            status:
+                                                                type: string
+                                                                description: Assistant status
+                                                            created_at:
+                                                                type: string
+                                                                format: date-time
+                                                                description: Creation timestamp
+                            example:
+                                object: 'list'
+                                data:
+                                    - id: 'Idealismus'
+                                      name: 'Idealismus'
+                                      description: 'Focuses on ideas as primary reality'
+                                      assistants:
+                                          - id: 'aurelian-i--schelling'
+                                            name: 'aurelian-i--schelling'
+                                            model: 'deepseek-reasoner'
+                                            status: 'Ready'
+                                            created_at: '2024-01-15T10:30:00Z'
+                                    - id: 'Materialismus'
+                                      name: 'Materialismus'
+                                      description: 'Emphasizes material reality and biological processes'
+                                      assistants:
+                                          - id: 'aloys-i--freud'
+                                            name: 'aloys-i--freud'
+                                            model: 'deepseek-reasoner'
+                                            status: 'Ready'
+                                            created_at: '2024-01-15T10:30:00Z'
+                                    - id: 'Realismus'
+                                      name: 'Realismus'
+                                      description: 'Balances spiritual and material perspectives'
+                                      assistants:
+                                          - id: 'arvid-i--steiner'
+                                            name: 'arvid-i--steiner'
+                                            model: 'deepseek-reasoner'
+                                            status: 'Ready'
+                                            created_at: '2024-01-15T10:30:00Z'
+                                    - id: 'Spiritualismus'
+                                      name: 'Spiritualismus'
+                                      description: 'Emphasizes spiritual hierarchies and development'
+                                      assistants:
+                                          - id: 'amara-i--steiner'
+                                            name: 'amara-i--steiner'
+                                            model: 'deepseek-reasoner'
+                                            status: 'Ready'
+                                            created_at: '2024-01-15T10:30:00Z'
                 '401':
                     description: Unauthorized
+                '500':
+                    description: Error retrieving weltanschauungen

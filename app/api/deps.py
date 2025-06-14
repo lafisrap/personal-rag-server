@@ -44,14 +44,18 @@ async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> Use
         )
         
         # Extract user ID from token
-        token_data = TokenData(sub=payload.get("sub"))
+        user_id = payload.get("sub")
+        username = payload.get("username")
         
-        if token_data.sub is None:
+        if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        
+        token_data = TokenData(user_id=user_id, username=username)
+        
     except (JWTError, ValidationError) as e:
         logger.error(f"JWT validation error: {str(e)}")
         raise HTTPException(
@@ -61,7 +65,7 @@ async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> Use
         )
     
     # Get user from database
-    user = await user_service.get_user_by_id(token_data.sub)
+    user = await user_service.get_user_by_id(token_data.user_id)
     
     if not user:
         raise HTTPException(
@@ -119,12 +123,16 @@ async def get_optional_user(token: Optional[str] = Depends(oauth2_scheme)) -> Op
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
-        token_data = TokenData(sub=payload.get("sub"))
         
-        if token_data.sub is None:
+        user_id = payload.get("sub")
+        username = payload.get("username")
+        
+        if user_id is None:
             return None
         
-        user = await user_service.get_user_by_id(token_data.sub)
+        token_data = TokenData(user_id=user_id, username=username)
+        
+        user = await user_service.get_user_by_id(token_data.user_id)
         
         if not user or not user.is_active:
             return None

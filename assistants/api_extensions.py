@@ -110,13 +110,85 @@ def save_assistant_config(assistant: Dict[str, Any]) -> None:
         logger.error(f"Error saving assistant configuration: {e}")
         raise HTTPException(status_code=500, detail=f"Error saving assistant configuration: {str(e)}")
 
+# OpenAI-compatible response models
+class AssistantListResponse(BaseModel):
+    """OpenAI-compatible assistant list response."""
+    object: str = Field(default="list", description="Object type")
+    data: List[Dict[str, Any]] = Field(..., description="List of assistants")
+    first_id: Optional[str] = Field(None, description="First assistant ID")
+    last_id: Optional[str] = Field(None, description="Last assistant ID")
+    has_more: bool = Field(False, description="Whether there are more assistants")
+
 # Endpoints
-@router.get("/", response_model=List[Assistant])
-async def list_assistants():
-    """List all assistants."""
+@router.get("/", response_model=AssistantListResponse)
+async def list_assistants(
+    weltanschauung: Optional[str] = Query(None, description="Filter by philosophical worldview"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    include_capabilities: bool = Query(False, description="Include template capabilities")
+):
+    """List all assistants with filtering support."""
     try:
-        assistants = assistant_manager.list_assistants()
-        return assistants
+        # Get all assistants from the manager
+        all_assistants = assistant_manager.list_assistants()
+        
+        # Convert to OpenAI-compatible format
+        assistant_data = []
+        for assistant in all_assistants:
+            # Map worldview names
+            worldview_mapping = {
+                "aurelian-i--schelling": "Idealismus",
+                "aloys-i--freud": "Materialismus", 
+                "arvid-i--steiner": "Realismus",
+                "amara-i--steiner": "Spiritualismus"
+            }
+            
+            assistant_id = assistant.get("id", assistant.get("name", ""))
+            assistant_worldview = worldview_mapping.get(assistant_id, "Unknown")
+            
+            # Apply weltanschauung filter
+            if weltanschauung and assistant_worldview != weltanschauung:
+                continue
+            
+            # Apply status filter (assume all are Ready for now)
+            assistant_status = "Ready"
+            if status and assistant_status != status:
+                continue
+            
+            # Build assistant data
+            assistant_item = {
+                "id": assistant_id,
+                "object": "assistant",
+                "name": assistant.get("name", assistant_id),
+                "description": f"Philosophical assistant for {assistant_worldview} worldview",
+                "model": assistant.get("model", "deepseek-reasoner"),
+                "instructions": assistant.get("instructions", ""),
+                "weltanschauung": assistant_worldview,
+                "status": assistant_status,
+                "created_at": assistant.get("created_at", "2024-01-15T10:30:00Z"),
+                "metadata": assistant.get("metadata", {})
+            }
+            
+            # Add capabilities if requested
+            if include_capabilities:
+                assistant_item["capabilities"] = {
+                    "templates": ["resolve", "reformulate", "glossary"],
+                    "max_context_length": 8192,
+                    "supported_languages": ["de", "en"]
+                }
+            
+            assistant_data.append(assistant_item)
+        
+        # Build response
+        response = AssistantListResponse(
+            data=assistant_data,
+            has_more=False
+        )
+        
+        if assistant_data:
+            response.first_id = assistant_data[0]["id"]
+            response.last_id = assistant_data[-1]["id"]
+        
+        return response
     except Exception as e:
         logger.error(f"Error listing assistants: {e}")
         raise HTTPException(status_code=500, detail=f"Error listing assistants: {str(e)}")
