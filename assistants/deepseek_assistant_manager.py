@@ -10,6 +10,8 @@ Cost comparison:
 - Pinecone Assistants: 12 assistants × $1.20/day = $5,184/year
 - Hybrid approach: ~$50-200/year DeepSeek + minimal Pinecone search costs
 - Savings: $5,000+ annually with SAME search quality + SAME model quality!
+
+Now uses code-only assistant definitions for better development workflow.
 """
 
 import os
@@ -26,12 +28,13 @@ logger = logging.getLogger(__name__)
 class DeepSeekAssistantManager:
     """Hybrid assistant manager using Pinecone for RAG search and DeepSeek for LLM."""
     
-    def __init__(self, api_key: str = None, pinecone_api_key: str = None):
+    def __init__(self, api_key: str = None, pinecone_api_key: str = None, development_mode: bool = False):
         """Initialize the hybrid assistant manager.
         
         Args:
             api_key: DeepSeek API key
             pinecone_api_key: Pinecone API key (for RAG search only)
+            development_mode: Enable development features (hot reload, debug logging)
         """
         self.api_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
         if not self.api_key:
@@ -47,15 +50,15 @@ class DeepSeekAssistantManager:
             base_url="https://api.deepseek.com"
         )
         
-        # Configure Pinecone for RAG search (not expensive Assistants!)
-        self.pc = Pinecone(api_key=self.pinecone_api_key)
-        self.region = "us"
-        
-        # Track Pinecone assistants for search only
-        self.pinecone_search_assistants = {}
+        # Initialize Pinecone for direct index access (no Assistant API)
+        self.pinecone_api_key = pinecone_api_key
+        self._pinecone_index = None  # Will be initialized lazily
         
         # Assistant configurations - mimics Pinecone structure
         self.assistant_configs = {}
+        
+        # Development mode
+        self.development_mode = development_mode
         
         # Usage tracking
         self.usage_stats = {
@@ -66,107 +69,283 @@ class DeepSeekAssistantManager:
             "last_reset": datetime.now().date()
         }
         
-        # Create default philosophical assistants
-        self._create_default_assistants()
+        # Load philosophical assistants from code definitions
+        self._load_assistants_from_definitions()
         
         logger.info("Initialized hybrid DeepSeek + Pinecone assistant manager")
     
-    def _create_default_assistants(self):
-        """Create the standard philosophical assistants on initialization."""
-        default_assistants = {
+    def _load_assistants_from_definitions(self):
+        """Load assistants from the code-only assistant definitions file."""
+        try:
+            # Import the assistant definitions
+            from .assistant_definitions import PHILOSOPHICAL_ASSISTANTS
+            
+            # Convert to internal format
+            for assistant_id, definition in PHILOSOPHICAL_ASSISTANTS.items():
+                self.assistant_configs[assistant_id] = {
+                    "name": definition.name,
+                    "worldview": definition.worldview.value,
+                    "instructions": definition.instructions,
+                    "model": definition.model,
+                    "temperature": definition.temperature,
+                    "max_tokens": definition.max_tokens,
+                    "created_on": datetime.now().isoformat(),
+                    "status": "Ready",
+                    "total_queries": 0,
+                    "total_tokens": 0,
+                    "total_cost": 0.0,
+                    # Development features
+                    "development_mode": definition.development_mode,
+                    "debug_logging": definition.debug_logging,
+                    "version": definition.version,
+                    "author": definition.author,
+                    "description": definition.description
+                }
+            
+            logger.info(f"Loaded {len(PHILOSOPHICAL_ASSISTANTS)} assistants from code definitions")
+            
+        except ImportError as e:
+            logger.error(f"Could not import assistant definitions: {e}")
+            logger.info("Falling back to minimal default assistants")
+            self._create_minimal_fallback_assistants()
+        except Exception as e:
+            logger.error(f"Error loading assistant definitions: {e}")
+            self._create_minimal_fallback_assistants()
+    
+    def _create_minimal_fallback_assistants(self):
+        """Create minimal fallback assistants if code definitions can't be loaded."""
+        fallback_assistants = {
             "aurelian-i--schelling": {
+                "name": "Aurelian I. Schelling",
                 "worldview": "Idealismus",
-                "instructions": """Du bist Aurelian I. Schelling, ein philosophischer Berater des Idealismus.
-Du verkörperst die tiefgründigen Ideen des Idealismus und bist ein glühender Anhänger von Friedrich Wilhelm Joseph Schelling und Platon.
-Du siehst in allem Sein nicht nur Materie und messbare Strukturen, sondern vor allem geistige, formende Kräfte am Werk.
-Ideen sind für dich lebendige Urquellen des Werdens - reale lebendige Wesen und die Quelle aller Kräfte dieser Welt.
-Sprich mit dem feierlich-enthusiastischen Tonfall, der schon bei Schelling anklingt.
-Antworte immer auf Deutsch."""
+                "instructions": "Du bist Aurelian I. Schelling, ein philosophischer Berater des Idealismus."
             },
             "aloys-i--freud": {
-                "worldview": "Materialismus", 
-                "instructions": """Du bist Aloys I. Freud, ein philosophischer Berater des Materialismus.
-Du betonst die materielle Realität und biologische Prozesse als Grundlage aller Phänomene.
-Für dich entstehen alle geistigen Prozesse aus komplexen materiellen Wechselwirkungen.
-Du analysierst psychologische und philosophische Fragen aus einer naturwissenschaftlichen Perspektive.
-Antworte immer auf Deutsch."""
-            },
-            "arvid-i--steiner": {
-                "worldview": "Realismus",
-                "instructions": """Du bist Arvid I. Steiner, ein philosophischer Berater des Realismus.
-Du balancierst spirituelle und materielle Perspektiven und suchst praktische, ausgewogene Lösungen.
-Du erkennst sowohl die Bedeutung von Ideen als auch die Realität materieller Bedingungen an.
-Dein Ansatz ist pragmatisch und berücksichtigt verschiedene Aspekte der menschlichen Erfahrung.
-Antworte immer auf Deutsch."""
-            },
-            "amara-i--steiner": {
-                "worldview": "Spiritualismus",
-                "instructions": """Du bist Amara I. Steiner, eine philosophische Beraterin des Spiritualismus.
-Du betonst spirituelle Hierarchien und die Entwicklung des menschlichen Bewusstseins.
-Für dich ist die geistige Entwicklung der zentrale Aspekt menschlicher Existenz.
-Du siehst spirituelle Gesetzmäßigkeiten und Entwicklungsstufen in allen Lebensbereichen.
-Antworte immer auf Deutsch."""
+                "name": "Aloys I. Freud", 
+                "worldview": "Materialismus",
+                "instructions": "Du bist Aloys I. Freud, ein philosophischer Berater des Materialismus."
             }
         }
         
-        for assistant_id, config in default_assistants.items():
+        for assistant_id, config in fallback_assistants.items():
             self.assistant_configs[assistant_id] = {
-                "name": assistant_id,
+                "name": config["name"],
                 "worldview": config["worldview"],
                 "instructions": config["instructions"],
                 "model": "deepseek-reasoner",
+                "temperature": 0.7,
+                "max_tokens": 2000,
                 "created_on": datetime.now().isoformat(),
                 "status": "Ready",
                 "total_queries": 0,
                 "total_tokens": 0,
-                "total_cost": 0.0
+                "total_cost": 0.0,
+                "development_mode": False,
+                "debug_logging": False,
+                "version": "1.0.0",
+                "author": "Fallback",
+                "description": "Minimal fallback assistant"
             }
-            
-        logger.info(f"Created {len(default_assistants)} default philosophical assistants")
+        
+        logger.warning(f"Created {len(fallback_assistants)} fallback assistants")
     
-    def _get_pinecone_search_assistant(self, assistant_id: str) -> Any:
-        """Get or create Pinecone assistant for RAG search only."""
-        if assistant_id not in self.pinecone_search_assistants:
+    def reload_assistant_definitions(self):
+        """Reload assistant definitions from code (useful for development)."""
+        if not self.development_mode:
+            logger.warning("reload_assistant_definitions called but development_mode is False")
+            return
+        
+        try:
+            # Clear existing configs
+            self.assistant_configs.clear()
+            
+            # Reimport the definitions module to get latest changes
+            import importlib
+            from . import assistant_definitions
+            importlib.reload(assistant_definitions)
+            
+            # Reload assistants
+            self._load_assistants_from_definitions()
+            
+            logger.info("Successfully reloaded assistant definitions from code")
+            
+        except Exception as e:
+            logger.error(f"Error reloading assistant definitions: {e}")
+            # Restore minimal fallback
+            self._create_minimal_fallback_assistants()
+    
+    def _get_pinecone_index(self):
+        """Get the Pinecone index for direct querying (no Assistant API)."""
+        if not hasattr(self, '_pinecone_index') or self._pinecone_index is None:
             try:
-                # Check if Pinecone assistant exists
-                assistants_list = self.pc.assistant.list_assistants()
-                existing_assistant = None
+                from pinecone import Pinecone
+                pc = Pinecone(api_key=self.pinecone_api_key)
+                self._pinecone_index = pc.Index("german-philosophic-index-12-worldviews")
+                logger.info("Connected to Pinecone index directly")
+            except Exception as e:
+                logger.error(f"Error connecting to Pinecone index: {e}")
+                self._pinecone_index = None
+        
+        return self._pinecone_index
+    
+
+    
+    def _get_assistant_documents(self, assistant_id: str) -> List[Dict[str, Any]]:
+        """Get the actual documents available to an assistant via direct Pinecone index query."""
+        try:
+            # Get the assistant's worldview to filter documents
+            config = self.assistant_configs.get(assistant_id, {})
+            worldview = config.get("worldview", "Unknown")
+            
+            # Get Pinecone index directly (no Assistant API)
+            index = self._get_pinecone_index()
+            if index:
+                # First, try to query without filter to see what dimensions work and what metadata is available
+                working_dimension = None
+                sample_metadata = {}
                 
-                for assistant in assistants_list:
-                    if assistant.name == assistant_id:
-                        existing_assistant = self.pc.assistant.Assistant(assistant_name=assistant_id)
-                        break
+                # Try different vector dimensions to find the one that works
+                expected_dimension = int(os.environ.get("EMBEDDINGS_DIMENSION", "768"))
+                dimensions_to_try = [expected_dimension, 384, 512, 768, 1024, 1536]
+                # Remove duplicates while preserving order
+                dimensions_to_try = list(dict.fromkeys(dimensions_to_try))
                 
-                if existing_assistant:
-                    self.pinecone_search_assistants[assistant_id] = existing_assistant
-                    logger.info(f"Found existing Pinecone search assistant: {assistant_id}")
-                else:
-                    # Create minimal Pinecone assistant for search only
-                    # This is cheaper than full Assistant API usage
-                    config = self.assistant_configs[assistant_id]
+                for dimension in dimensions_to_try:
+                    try:
+                        logger.debug(f"Trying {dimension} dimensions...")
+                        query_response = index.query(
+                            vector=[0.0] * dimension,
+                            top_k=10,  # Just get a few samples first
+                            include_metadata=True
+                        )
+                        
+                        if query_response.matches:
+                            working_dimension = dimension
+                            # Sample the metadata to understand the structure
+                            for match in query_response.matches[:3]:
+                                if match.metadata:
+                                    sample_metadata = match.metadata
+                                    logger.debug(f"Sample metadata: {sample_metadata}")
+                                    break
+                            break
+                            
+                    except Exception as dim_e:
+                        logger.debug(f"Failed with {dimension} dimensions: {dim_e}")
+                        continue
+                
+                if not working_dimension:
+                    logger.warning("Could not find working dimension for Pinecone index")
+                    return []
+                
+                logger.info(f"Using {working_dimension} dimensions for Pinecone queries")
+                
+                # Now try to find the right metadata filter for worldview
+                worldview_filter = None
+                
+                # Check common metadata field names for worldview
+                possible_worldview_fields = ["worldview", "category", "weltanschauung", "topic", "subject"]
+                for field in possible_worldview_fields:
+                    if field in sample_metadata:
+                        logger.debug(f"Found potential worldview field: {field} = {sample_metadata[field]}")
+                        # Try filtering with this field
+                        try:
+                            test_response = index.query(
+                                vector=[0.0] * working_dimension,
+                                top_k=5,
+                                include_metadata=True,
+                                filter={field: worldview}
+                            )
+                            if test_response.matches:
+                                worldview_filter = {field: worldview}
+                                logger.info(f"Using filter: {worldview_filter}")
+                                break
+                        except Exception as filter_e:
+                            logger.debug(f"Filter {field}={worldview} failed: {filter_e}")
+                
+                # If no exact worldview match, try case variations
+                if not worldview_filter and worldview != "Unknown":
+                    worldview_variations = [
+                        worldview.lower(),
+                        worldview.upper(), 
+                        worldview.capitalize()
+                    ]
                     
-                    search_assistant = self.pc.assistant.create_assistant(
-                        assistant_name=assistant_id,
-                        instructions=config["instructions"],
-                        region=self.region,
-                        timeout=60
+                    for field in possible_worldview_fields:
+                        for variation in worldview_variations:
+                            try:
+                                test_response = index.query(
+                                    vector=[0.0] * working_dimension,
+                                    top_k=5,
+                                    include_metadata=True,
+                                    filter={field: variation}
+                                )
+                                if test_response.matches:
+                                    worldview_filter = {field: variation}
+                                    logger.info(f"Using filter with variation: {worldview_filter}")
+                                    break
+                            except:
+                                continue
+                        if worldview_filter:
+                            break
+                
+                # Final query with or without filter
+                try:
+                    query_response = index.query(
+                        vector=[0.0] * working_dimension,
+                        top_k=10000,  # Get many matches
+                        include_metadata=True,
+                        filter=worldview_filter
                     )
                     
-                    self.pinecone_search_assistants[assistant_id] = search_assistant
-                    logger.info(f"Created Pinecone search assistant: {assistant_id}")
+                    # Extract unique documents
+                    unique_docs = {}
+                    for match in query_response.matches:
+                        if match.metadata:
+                            source = match.metadata.get("source", match.metadata.get("title", f"doc_{match.id}"))
+                            if source not in unique_docs:
+                                unique_docs[source] = match.metadata
                     
-            except Exception as e:
-                logger.error(f"Error getting Pinecone search assistant {assistant_id}: {e}")
-                return None
-        
-        return self.pinecone_search_assistants[assistant_id]
+                    documents = list(unique_docs.values())
+                    documents.sort(key=lambda x: x.get("title", x.get("source", "")))
+                    
+                    filter_desc = f"with filter {worldview_filter}" if worldview_filter else "without filter"
+                    logger.info(f"Found {len(documents)} unique documents for {worldview} {filter_desc}")
+                    
+                    # If no documents found with filter, try without filter to see what's available
+                    if not documents and worldview_filter:
+                        logger.info("No documents found with filter, trying without filter to see available data...")
+                        query_response = index.query(
+                            vector=[0.0] * working_dimension,
+                            top_k=20,  # Just get a sample
+                            include_metadata=True
+                        )
+                        
+                        logger.info("Available metadata fields in index:")
+                        for i, match in enumerate(query_response.matches[:5]):
+                            if match.metadata:
+                                logger.info(f"Document {i+1}: {list(match.metadata.keys())}")
+                                logger.info(f"  Sample values: {match.metadata}")
+                    
+                    return documents
+                    
+                except Exception as e:
+                    logger.error(f"Final query failed: {e}")
+                    return []
+            
+            return []
+                
+        except Exception as e:
+            logger.warning(f"Could not get documents for assistant {assistant_id}: {e}")
+            return []
     
     # ===== PINECONE ASSISTANT MANAGER COMPATIBLE INTERFACE =====
     
     def list_assistants(self) -> List[Dict[str, Any]]:
         """List all assistants (compatible with PineconeAssistantManager interface)."""
-        return [
-            {
+        assistants = []
+        for assistant_id, config in self.assistant_configs.items():
+            assistants.append({
+                "id": assistant_id,
                 "name": config["name"],
                 "created_on": config["created_on"],
                 "status": config["status"],
@@ -174,9 +353,8 @@ Antworte immer auf Deutsch."""
                 "worldview": config["worldview"],
                 "total_queries": config["total_queries"],
                 "total_cost": config["total_cost"]
-            }
-            for config in self.assistant_configs.values()
-        ]
+            })
+        return assistants
     
     def get_available_models(self) -> List[str]:
         """Get list of available models."""
@@ -190,15 +368,6 @@ Antworte immer auf Deutsch."""
         """Delete an assistant."""
         if assistant_name in self.assistant_configs:
             del self.assistant_configs[assistant_name]
-            
-            # Also delete Pinecone search assistant if it exists
-            if assistant_name in self.pinecone_search_assistants:
-                try:
-                    self.pc.assistant.delete_assistant(assistant_name=assistant_name)
-                    del self.pinecone_search_assistants[assistant_name]
-                except Exception as e:
-                    logger.warning(f"Error deleting Pinecone search assistant: {e}")
-            
             logger.info(f"Deleted assistant: {assistant_name}")
             return True
         return False
@@ -248,7 +417,8 @@ Antworte immer auf Deutsch."""
         user_message: str,
         chat_history: List[Dict[str, str]] = None,
         use_knowledge_base: bool = True,
-        temperature: float = 0.7
+        temperature: float = None,
+        debug_mode: bool = False
     ) -> Dict[str, Any]:
         """Query assistant using hybrid approach: Pinecone search + DeepSeek LLM."""
         start_time = time.time()
@@ -263,6 +433,21 @@ Antworte immer auf Deutsch."""
             config = self.assistant_configs[assistant_id]
             worldview = config["worldview"]
             
+            # Use assistant's temperature if not overridden
+            actual_temperature = temperature if temperature is not None else config.get("temperature", 0.7)
+            actual_max_tokens = config.get("max_tokens", 2000)
+            
+            # Debug logging if enabled
+            debug_enabled = debug_mode or config.get("debug_logging", False) or self.development_mode
+            if debug_enabled:
+                logger.info(f"[DEBUG] Assistant: {assistant_id} ({config.get('name', 'Unknown')})")
+                logger.info(f"[DEBUG] Worldview: {worldview}")
+                logger.info(f"[DEBUG] Temperature: {actual_temperature}")
+                logger.info(f"[DEBUG] Max tokens: {actual_max_tokens}")
+                logger.info(f"[DEBUG] User message: {user_message[:100]}...")
+                logger.info(f"[DEBUG] Development mode: {config.get('development_mode', False)}")
+                logger.info(f"[DEBUG] Version: {config.get('version', 'Unknown')}")
+            
             # Prepare system message
             system_message = config["instructions"]
             
@@ -273,6 +458,8 @@ Antworte immer auf Deutsch."""
                 )
                 if knowledge_context:
                     system_message += f"\n\nRelevante Textstellen aus der Wissensbasis:\n{knowledge_context}"
+                    if debug_enabled:
+                        logger.info(f"[DEBUG] Knowledge context: {len(knowledge_context)} characters")
             
             # Prepare messages for DeepSeek
             messages = [{"role": "system", "content": system_message}]
@@ -284,16 +471,22 @@ Antworte immer auf Deutsch."""
                         "role": msg.get("role", "user"),
                         "content": msg.get("content", "")
                     })
+                if debug_enabled:
+                    logger.info(f"[DEBUG] Chat history: {len(chat_history)} messages")
             
             # Add current message
             messages.append({"role": "user", "content": user_message})
+            
+            if debug_enabled:
+                total_prompt_length = sum(len(msg["content"]) for msg in messages)
+                logger.info(f"[DEBUG] Total prompt length: {total_prompt_length} characters")
             
             # Call DeepSeek API
             response = self.client.chat.completions.create(
                 model=config["model"],
                 messages=messages,
-                temperature=temperature,
-                max_tokens=2000
+                temperature=actual_temperature,
+                max_tokens=actual_max_tokens
             )
             
             # Extract response and usage
@@ -317,8 +510,14 @@ Antworte immer auf Deutsch."""
             
             processing_time = time.time() - start_time
             
-            # Return in format compatible with PineconeAssistantManager
-            return {
+            if debug_enabled:
+                logger.info(f"[DEBUG] Response length: {len(assistant_response)} characters")
+                logger.info(f"[DEBUG] Tokens used: {usage.total_tokens}")
+                logger.info(f"[DEBUG] Cost: ${total_cost:.6f}")
+                logger.info(f"[DEBUG] Processing time: {processing_time:.2f}s")
+            
+            # Build response
+            response_data = {
                 "message": assistant_response,
                 "citations": [],  # Could be populated from Pinecone search results
                 "usage": {
@@ -333,6 +532,24 @@ Antworte immer auf Deutsch."""
                 "worldview": worldview
             }
             
+            # Add development info if in development mode
+            if self.development_mode or debug_enabled:
+                response_data["development_info"] = {
+                    "temperature_used": actual_temperature,
+                    "max_tokens_used": actual_max_tokens,
+                    "debug_mode": debug_enabled,
+                    "assistant_config": {
+                        "name": config.get("name", "Unknown"),
+                        "version": config.get("version", "Unknown"),
+                        "author": config.get("author", "Unknown"),
+                        "development_mode": config.get("development_mode", False)
+                    },
+                    "system_message_length": len(system_message),
+                    "knowledge_base_used": use_knowledge_base
+                }
+            
+            return response_data
+            
         except Exception as e:
             logger.error(f"Error querying assistant {assistant_id}: {e}")
             raise
@@ -344,29 +561,79 @@ Antworte immer auf Deutsch."""
         worldview: str, 
         top_k: int = 3
     ) -> str:
-        """Get relevant context using Pinecone RAG search (not expensive Assistant API)."""
+        """Get relevant context using direct Pinecone index search (no Assistant API)."""
         try:
-            # Get Pinecone assistant for search only
-            search_assistant = self._get_pinecone_search_assistant(assistant_id)
-            if not search_assistant:
+            # Get Pinecone index directly
+            index = self._get_pinecone_index()
+            if not index:
                 return ""
             
-            # Use Pinecone's query_with_context for RAG search
-            # This is much cheaper than using the full Assistant API
-            metadata_filter = {"worldview": worldview} if worldview != "Unknown" else None
+            # Generate embedding for the query using the same model as the knowledge base
+            try:
+                # Use the same embedding model as specified in the environment
+                model_name = os.environ.get("EMBEDDINGS_MODEL", "T-Systems-onsite/cross-en-de-roberta-sentence-transformer")
+                
+                # Use sentence-transformers library to generate embeddings
+                from sentence_transformers import SentenceTransformer
+                
+                # Initialize the model (cache it for efficiency)
+                if not hasattr(self, '_embedding_model') or self._embedding_model is None:
+                    logger.info(f"Loading embedding model: {model_name}")
+                    self._embedding_model = SentenceTransformer(model_name)
+                
+                # Generate embedding
+                query_vector = self._embedding_model.encode(query).tolist()
+                expected_dimensions = int(os.environ.get("EMBEDDINGS_DIMENSION", "768"))
+                logger.debug(f"Generated embedding with {len(query_vector)} dimensions using {model_name} (expected: {expected_dimensions})")
+                
+            except Exception as e:
+                logger.error(f"Error generating embedding for query with model {model_name}: {e}")
+                return ""
             
-            context_response = search_assistant.context(
-                query=query,
+            # Determine the correct metadata filter field
+            metadata_filter = None
+            if worldview != "Unknown":
+                # Try common metadata field names
+                possible_filters = [
+                    {"worldview": worldview},
+                    {"category": worldview},
+                    {"weltanschauung": worldview},
+                    {"worldview": worldview.lower()},
+                    {"category": worldview.lower()}
+                ]
+                
+                # Use the first filter that works, or none if none work
+                for filter_option in possible_filters:
+                    try:
+                        # Test the filter with a small query
+                        test_response = index.query(
+                            vector=query_vector,
+                            top_k=1,
+                            include_metadata=True,
+                            filter=filter_option
+                        )
+                        if test_response.matches:
+                            metadata_filter = filter_option
+                            logger.debug(f"Using metadata filter: {metadata_filter}")
+                            break
+                    except Exception as filter_e:
+                        logger.debug(f"Filter {filter_option} failed: {filter_e}")
+                        continue
+            
+            # Query Pinecone index directly
+            query_response = index.query(
+                vector=query_vector,
+                top_k=top_k,
+                include_metadata=True,
                 filter=metadata_filter
             )
             
             # Format context from search results
             context_parts = []
-            for i, snippet in enumerate(context_response.snippets[:top_k], 1):
-                content = snippet.content[:500]  # Limit content length
-                metadata = getattr(snippet, 'metadata', {})
-                source = metadata.get("source", metadata.get("title", "Unknown"))
-                score = getattr(snippet, 'score', 0.0)
+            for i, match in enumerate(query_response.matches[:top_k], 1):
+                content = match.metadata.get("text", "")[:500]  # Limit content length
+                source = match.metadata.get("source", match.metadata.get("title", "Unknown"))
+                score = match.score
                 
                 if content:
                     context_parts.append(f"[{i}] {source} (Score: {score:.3f}): {content}...")

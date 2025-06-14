@@ -66,8 +66,8 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai")  # openai or deepseek
     
     # Embeddings Settings
-    EMBEDDINGS_MODEL: str = os.getenv("EMBEDDINGS_MODEL", "deepset/gbert-large")
-    EMBEDDINGS_DIMENSION: int = 768  # Dimension for cross-en-de-roberta
+    EMBEDDINGS_MODEL: str = os.getenv("EMBEDDINGS_MODEL", "T-Systems-onsite/cross-en-de-roberta-sentence-transformer")
+    EMBEDDINGS_DIMENSION: int = int(os.getenv("EMBEDDINGS_DIMENSION", "768"))
     
     # Local Embedding Service
     LOCAL_EMBEDDING_SERVICE_URL: str = os.getenv("LOCAL_EMBEDDING_SERVICE_URL", "http://localhost:8001")

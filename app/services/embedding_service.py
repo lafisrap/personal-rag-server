@@ -15,8 +15,8 @@ class EmbeddingService:
     
     def __init__(self):
         self.model = None
-        self.model_name = "T-Systems-onsite/cross-en-de-roberta-sentence-transformer"  # New German-optimized model
-        self.dimension = 768  # Dimension for cross-en-de-roberta-sentence-transformer
+        self.model_name = os.environ.get("EMBEDDINGS_MODEL", "T-Systems-onsite/cross-en-de-roberta-sentence-transformer")
+        self.dimension = int(os.environ.get("EMBEDDINGS_DIMENSION", "768"))
         
         # Performance settings
         self.use_mps = settings.USE_MPS  # Use Apple Metal Performance Shaders if available

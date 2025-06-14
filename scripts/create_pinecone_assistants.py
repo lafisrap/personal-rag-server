@@ -15,7 +15,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from assistants.pinecone_assistant_manager import PineconeAssistantManager
+from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
 
 # OpenAI assistant configurations based on the provided configs
 OPENAI_ASSISTANT_CONFIGS = {

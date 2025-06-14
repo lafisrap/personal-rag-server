@@ -28,7 +28,7 @@ log_dir = os.path.join(PROJECT_ROOT, 'logs')
 os.makedirs(log_dir, exist_ok=True)
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
@@ -36,6 +36,17 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("rag-cli")
+
+# Suppress noisy libraries
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("datasets").setLevel(logging.WARNING)
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.WARNING)
+logging.getLogger("numexpr").setLevel(logging.WARNING)
+logging.getLogger("assistants.deepseek_assistant_manager").setLevel(logging.WARNING)
+
+# Set tokenizers parallelism to avoid warnings
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 # Create main CLI group
 @click.group()
@@ -1556,13 +1567,14 @@ def assistants_list(output_format: str, output_file: Optional[str]):
             click.echo()
             
             # Calculate column widths
+            id_width = max(len(a.get('id', '')) for a in assistants) + 2
             name_width = max(len(a['name']) for a in assistants) + 2
             status_width = max(len(a['status']) for a in assistants) + 2
             model_width = max(len(a['model']) for a in assistants) + 2
             date_width = 20
             
             # Header
-            header = f"{'Name':<{name_width}} {'Status':<{status_width}} {'Model':<{model_width}} {'Created':<{date_width}}"
+            header = f"{'ID':<{id_width}} {'Name':<{name_width}} {'Status':<{status_width}} {'Model':<{model_width}} {'Created':<{date_width}}"
             click.echo(header)
             click.echo("-" * len(header))
             
@@ -1578,7 +1590,9 @@ def assistants_list(output_format: str, output_file: Optional[str]):
                     except:
                         pass
                 
-                row = f"{assistant['name']:<{name_width}} {assistant['status']:<{status_width}} {assistant['model']:<{model_width}} {created_date:<{date_width}}"
+                assistant_id = assistant.get('id', 'N/A')
+                
+                row = f"{assistant_id:<{id_width}} {assistant['name']:<{name_width}} {assistant['status']:<{status_width}} {assistant['model']:<{model_width}} {created_date:<{date_width}}"
                 click.echo(row)
                 
         elif output_format == 'json':
@@ -1590,7 +1604,7 @@ def assistants_list(output_format: str, output_file: Optional[str]):
             import io
             
             output = io.StringIO()
-            writer = csv.DictWriter(output, fieldnames=['name', 'status', 'model', 'created_on'])
+            writer = csv.DictWriter(output, fieldnames=['id', 'name', 'status', 'model', 'created_on'])
             writer.writeheader()
             writer.writerows(assistants)
             output_data = output.getvalue()
@@ -1603,13 +1617,14 @@ def assistants_list(output_format: str, output_file: Optional[str]):
                     json.dump(assistants, f, indent=2)
                 elif output_format == 'csv':
                     import csv
-                    writer = csv.DictWriter(f, fieldnames=['name', 'status', 'model', 'created_on'])
+                    writer = csv.DictWriter(f, fieldnames=['id', 'name', 'status', 'model', 'created_on'])
                     writer.writeheader()
                     writer.writerows(assistants)
                 else:  # table
-                    f.write("Name,Status,Model,Created\n")
+                    f.write("ID,Name,Status,Model,Created\n")
                     for assistant in assistants:
-                        f.write(f"{assistant['name']},{assistant['status']},{assistant['model']},{assistant['created_on']}\n")
+                        assistant_id = assistant.get('id', 'N/A')
+                        f.write(f"{assistant_id},{assistant['name']},{assistant['status']},{assistant['model']},{assistant['created_on']}\n")
             
             click.echo(f"💾 Output saved to: {output_file}")
         
@@ -1617,154 +1632,9 @@ def assistants_list(output_format: str, output_file: Optional[str]):
         click.echo(f"❌ Error listing assistants: {str(e)}", err=True)
         sys.exit(1)
 
-@assistants_group.command('create')
-@click.argument('name')
-@click.argument('worldview', type=click.Choice(['Idealismus', 'Materialismus', 'Realismus', 'Spiritualismus']))
-@click.option('--model', type=click.Choice(['deepseek-reasoner', 'deepseek-chat', 'claude-3-5-sonnet', 'gpt-4o', 'gpt-4o-mini']), 
-              help='LLM model to use for the assistant (default: deepseek-reasoner)')
-@click.option('--instructions-file', help='Path to file containing custom instructions')
-@click.option('--dry-run/--no-dry-run', default=False, help='Show what would be created without actually creating')
-def assistants_create(name: str, worldview: str, model: Optional[str], instructions_file: Optional[str], dry_run: bool):
-    """Create a new philosophical assistant.
-    
-    NAME: Name for the assistant
-    WORLDVIEW: Philosophical worldview (Idealismus, Materialismus, Realismus, Spiritualismus)
-    """
-    try:
-        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
-        from assistants.common_instructions import compose_instructions
-        
-        click.echo(f"Creating assistant: {name}")
-        click.echo(f"Worldview: {worldview}")
-        if model:
-            click.echo(f"Model: {model}")
-        else:
-            click.echo(f"Model: default (will use Pinecone's default LLM)")
-        
-        if dry_run:
-            click.echo("🔍 DRY RUN - No assistant will be created")
-        
-        # Load configuration for the worldview
-        config_path = f"assistants/config/{worldview.lower()}.json"
-        if not os.path.exists(config_path):
-            click.echo(f"❌ Configuration file not found: {config_path}", err=True)
-            return
-        
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-        
-        # Use custom instructions if provided
-        if instructions_file:
-            if not os.path.exists(instructions_file):
-                click.echo(f"❌ Instructions file not found: {instructions_file}", err=True)
-                return
-            
-            with open(instructions_file, 'r', encoding='utf-8') as f:
-                instructions = f.read().strip()
-            click.echo(f"📝 Using custom instructions from: {instructions_file}")
-        else:
-            # Use instructions from config
-            instructions = config.get("instructions", "")
-            click.echo(f"📝 Using instructions from config")
-        
-        # Compose full instructions (includes common instructions)
-        full_instructions = compose_instructions(worldview, instructions)
-        
-        if dry_run:
-            click.echo("\n" + "="*50)
-            click.echo("PROPOSED ASSISTANT CONFIGURATION:")
-            click.echo("="*50)
-            click.echo(f"Name: {name}")
-            click.echo(f"Worldview: {worldview}")
-            click.echo(f"Model: {model or 'default'}")
-            click.echo(f"Instructions length: {len(full_instructions)} characters")
-            click.echo("\nInstructions preview:")
-            click.echo("-" * 30)
-            click.echo(full_instructions[:200] + "..." if len(full_instructions) > 200 else full_instructions)
-            click.echo("-" * 30)
-            click.echo("\n✅ Dry run complete - no assistant created")
-            return
-        
-        # Create the assistant
-        manager = PineconeAssistantManager()
-        
-        with click.progressbar(length=100, label='Creating assistant') as bar:
-            bar.update(25)
-            
-            assistant_info = manager.create_philosophical_assistant(
-                name=name,
-                instructions=full_instructions,
-                worldview=worldview,
-                model=model
-            )
-            bar.update(100)
-        
-        click.echo(f"✅ Successfully created assistant: {name}")
-        click.echo(f"📊 Worldview: {worldview}")
-        if model:
-            click.echo(f"🤖 Model: {model}")
-        click.echo(f"📝 Instructions: {len(full_instructions)} characters")
-        
-        # Save assistant info to a summary file
-        summary_file = f"logs/assistant_created_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        os.makedirs("logs", exist_ok=True)
-        
-        summary_data = {
-            "name": name,
-            "worldview": worldview,
-            "model": model,
-            "created_at": datetime.now().isoformat(),
-            "instructions_length": len(full_instructions),
-            "config_file": config_path
-        }
-        
-        with open(summary_file, 'w') as f:
-            json.dump(summary_data, f, indent=2)
-        
-        click.echo(f"📄 Summary saved to: {summary_file}")
-        
-    except Exception as e:
-        click.echo(f"❌ Error creating assistant: {str(e)}", err=True)
-        logger.error(f"Error creating assistant: {str(e)}")
-        sys.exit(1)
 
-@assistants_group.command('delete')
-@click.argument('name')
-@click.confirmation_option(prompt='Are you sure you want to delete this assistant?')
-def assistants_delete(name: str):
-    """Delete a Pinecone assistant."""
-    try:
-        # Import the assistant manager
-        sys.path.insert(0, PROJECT_ROOT)
-        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
-        
-        manager = PineconeAssistantManager()
-        
-        click.echo(f"Deleting assistant: {name}")
-        
-        success = manager.delete_assistant(name)
-        
-        if success:
-            click.echo(f"✅ Successfully deleted assistant: {name}")
-            
-            # Save deletion log
-            log_entry = {
-                "timestamp": datetime.now().isoformat(),
-                "action": "delete",
-                "assistant_name": name,
-                "success": True
-            }
-            
-            log_file = os.path.join(log_dir, f"assistant_deletion_{datetime.now().strftime('%Y%m%d')}.log")
-            with open(log_file, 'a') as f:
-                f.write(json.dumps(log_entry) + "\n")
-        else:
-            click.echo(f"❌ Failed to delete assistant: {name}", err=True)
-            sys.exit(1)
-        
-    except Exception as e:
-        click.echo(f"Error deleting assistant: {str(e)}", err=True)
-        sys.exit(1)
+
+
 
 @assistants_group.command('chat')
 @click.argument('assistant-name')
@@ -1780,8 +1650,12 @@ def assistants_chat(assistant_name: str, message: str, interactive: bool, histor
         
         manager = PineconeAssistantManager()
         
-        # Get the assistant
-        assistant = manager.pc.assistant.Assistant(assistant_name=assistant_name)
+        # Verify assistant exists
+        if assistant_name not in manager.assistant_configs:
+            click.echo(f"❌ Assistant {assistant_name} not found", err=True)
+            return
+        
+        config = manager.assistant_configs[assistant_name]
         
         # Load chat history if file provided
         chat_history = []
@@ -1791,14 +1665,15 @@ def assistants_chat(assistant_name: str, message: str, interactive: bool, histor
         
         if not interactive:
             # Single message
-            click.echo(f"💬 Chatting with {assistant_name}...")
-            response = manager.chat_with_assistant(
-                assistant=assistant,
-                message=message,
-                chat_history=chat_history
+            click.echo(f"💬 Chatting with {config['name']}...")
+            response = manager.query_assistant(
+                assistant_id=assistant_name,
+                user_message=message,
+                chat_history=chat_history,
+                use_knowledge_base=True
             )
             
-            click.echo(f"\n🤖 {assistant_name}:")
+            click.echo(f"\n🤖 {config['name']}:")
             click.echo(response['message'])
             
             if response.get('citations'):
@@ -1812,17 +1687,18 @@ def assistants_chat(assistant_name: str, message: str, interactive: bool, histor
             
         else:
             # Interactive session
-            click.echo(f"🚀 Starting interactive chat with {assistant_name}")
+            click.echo(f"🚀 Starting interactive chat with {config['name']}")
             click.echo("Type 'quit' or 'exit' to end the session")
             
             # Send initial message
-            response = manager.chat_with_assistant(
-                assistant=assistant,
-                message=message,
-                chat_history=chat_history
+            response = manager.query_assistant(
+                assistant_id=assistant_name,
+                user_message=message,
+                chat_history=chat_history,
+                use_knowledge_base=True
             )
             
-            click.echo(f"\n🤖 {assistant_name}:")
+            click.echo(f"\n🤖 {config['name']}:")
             click.echo(response['message'])
             
             chat_history.append({"role": "user", "content": message})
@@ -1835,13 +1711,14 @@ def assistants_chat(assistant_name: str, message: str, interactive: bool, histor
                 if user_input.lower() in ['quit', 'exit', '']:
                     break
                 
-                response = manager.chat_with_assistant(
-                    assistant=assistant,
-                    message=user_input,
-                    chat_history=chat_history
+                response = manager.query_assistant(
+                    assistant_id=assistant_name,
+                    user_message=user_input,
+                    chat_history=chat_history,
+                    use_knowledge_base=True
                 )
                 
-                click.echo(f"\n🤖 {assistant_name}:")
+                click.echo(f"\n🤖 {config['name']}:")
                 click.echo(response['message'])
                 
                 chat_history.append({"role": "user", "content": user_input})
@@ -1863,55 +1740,116 @@ def assistants_chat(assistant_name: str, message: str, interactive: bool, histor
               help='Output format')
 @click.option('--output-file', help='Save output to file')
 def assistants_list_files(assistant_name: str, output_format: str, output_file: Optional[str]):
-    """List files/documents uploaded to an assistant."""
+    """Show documents available to assistant via shared knowledge base."""
     try:
         # Import the assistant manager  
         sys.path.insert(0, PROJECT_ROOT)
         from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
         
         manager = PineconeAssistantManager()
-        assistant = manager.pc.assistant.Assistant(assistant_name=assistant_name)
         
-        # Get assistant files (this may need to be implemented in the manager)
-        # Using a placeholder method since Pinecone Assistant API file listing might vary
-        try:
-            files = assistant.list_files() if hasattr(assistant, 'list_files') else []
-        except:
-            files = []
-        
-        if not files:
-            click.echo(f"No files found for assistant: {assistant_name}")
+        # Get assistant configuration to determine worldview
+        assistant_configs = manager.assistant_configs
+        if assistant_name not in assistant_configs:
+            click.echo(f"❌ Assistant {assistant_name} not found", err=True)
             return
         
-        # Format output
+        config = assistant_configs[assistant_name]
+        worldview = config["worldview"]
+        
+        click.echo(f"📚 Documents available to '{config['name']}' ({worldview}):")
+        click.echo(f"🔍 Filter: worldview = {worldview}")
+        
+        # Get actual documents from the shared knowledge base
+        documents = manager._get_assistant_documents(assistant_name)
+        
         if output_format == 'table':
-            click.echo(f"\nFiles for assistant '{assistant_name}':")
-            click.echo("-" * 80)
-            click.echo(f"{'File ID':<20} {'Filename':<30} {'Status':<15} {'Size':<10}")
-            click.echo("-" * 80)
-            for file_info in files:
-                click.echo(f"{file_info.get('id', 'N/A'):<20} {file_info.get('filename', 'N/A'):<30} {file_info.get('status', 'N/A'):<15} {file_info.get('size', 'N/A'):<10}")
+            if documents:
+                click.echo(f"\n📚 Available Documents ({len(documents)} total):")
+                click.echo("-" * 80)
+                for i, doc in enumerate(documents[:50], 1):
+                    title = doc.get('title', doc.get('source', 'Unknown'))
+                    # Clean up the title for better display
+                    if title.startswith('🌎'):
+                        title = title[2:]  # Remove emoji
+                    if '#' in title:
+                        title = title.replace('#', ' - ')
+                    click.echo(f"{i:3d}. {title}")
+                
+                if len(documents) > 50:
+                    click.echo(f"\n... and {len(documents) - 50} more documents")
+            else:
+                click.echo("📭 No documents found for this worldview")
+            
+            click.echo()
+            click.echo("📝 Note: Documents are accessed via shared Pinecone index with worldview filtering.")
+            
         else:  # json
-            output = json.dumps(files, indent=2)
+            data = {
+                "assistant_name": assistant_name,
+                "assistant_display_name": config['name'],
+                "worldview": worldview,
+                "model": config['model'],
+                "documents": [
+                    {
+                        "title": doc.get('title', doc.get('source', 'Unknown')),
+                        "source": doc.get('source', ''),
+                        "metadata": doc
+                    }
+                    for doc in documents[:50]  # Limit to first 50 for JSON output
+                ],
+                "architecture": "hybrid_deepseek_pinecone",
+                "note": "Documents are accessed via shared Pinecone index with worldview filtering"
+            }
+            output = json.dumps(data, indent=2)
             click.echo(output)
         
         # Save to file if requested
         if output_file:
             with open(output_file, 'w') as f:
                 if output_format == 'json':
-                    json.dump(files, f, indent=2)
+                    data = {
+                        "assistant_name": assistant_name,
+                        "assistant_display_name": config['name'],
+                        "worldview": worldview,
+                        "model": config['model'],
+                        "documents": [
+                            {
+                                "title": doc.get('title', doc.get('source', 'Unknown')),
+                                "source": doc.get('source', ''),
+                                "metadata": doc
+                            }
+                            for doc in documents[:50]
+                        ],
+                        "architecture": "hybrid_deepseek_pinecone",
+                        "note": "Documents are accessed via shared Pinecone index with worldview filtering"
+                    }
+                    json.dump(data, f, indent=2)
                 else:  # table
-                    f.write(f"Files for assistant '{assistant_name}':\n")
-                    f.write("-" * 80 + "\n")
-                    f.write(f"{'File ID':<20} {'Filename':<30} {'Status':<15} {'Size':<10}\n")
-                    f.write("-" * 80 + "\n")
-                    for file_info in files:
-                        f.write(f"{file_info.get('id', 'N/A'):<20} {file_info.get('filename', 'N/A'):<30} {file_info.get('status', 'N/A'):<15} {file_info.get('size', 'N/A'):<10}\n")
+                    f.write(f"Documents available to '{config['name']}' ({worldview}):\n")
+                    f.write(f"Filter: worldview = {worldview}\n\n")
+                    
+                    if documents:
+                        f.write(f"Available Documents ({len(documents)} total):\n")
+                        f.write("-" * 40 + "\n")
+                        for i, doc in enumerate(documents[:50], 1):
+                            title = doc.get('title', doc.get('source', 'Unknown'))
+                            if title.startswith('🌎'):
+                                title = title[2:]
+                            if '#' in title:
+                                title = title.replace('#', ' - ')
+                            f.write(f"{i:3d}. {title}\n")
+                        if len(documents) > 50:
+                            f.write(f"\n... and {len(documents) - 50} more documents\n")
+                    else:
+                        f.write("No documents found for this worldview\n")
+                    
+                    f.write("\nNote: Documents are accessed via shared Pinecone index with worldview filtering.\n")
             
-            click.echo(f"Output saved to {output_file}")
+            click.echo(f"💾 Output saved to {output_file}")
         
     except Exception as e:
-        click.echo(f"Error listing files for assistant: {str(e)}", err=True)
+        click.echo(f"❌ Error listing files for assistant: {str(e)}", err=True)
         sys.exit(1)
 
 @assistants_group.command('add-files')
@@ -2123,6 +2061,405 @@ def assistants_context(assistant_name: str, query: str, top_k: int,
         
     except Exception as e:
         click.echo(f"Error querying context: {str(e)}", err=True)
+        sys.exit(1)
+
+@assistants_group.command('resolve')
+@click.argument('assistant-name')
+@click.argument('gedanke-in-weltanschauung')
+@click.option('--aspekte', help='Additional aspects to consider')
+@click.option('--output-format', type=click.Choice(['table', 'json']), default='table', help='Output format')
+@click.option('--output-file', help='Save output to file')
+def assistants_resolve(assistant_name: str, gedanke_in_weltanschauung: str, aspekte: Optional[str], 
+                      output_format: str, output_file: Optional[str]):
+    """Correct philosophical misconceptions from assistant's worldview."""
+    try:
+        # Import the assistant manager
+        sys.path.insert(0, PROJECT_ROOT)
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        
+        # Verify assistant exists
+        if assistant_name not in manager.assistant_configs:
+            click.echo(f"❌ Assistant {assistant_name} not found", err=True)
+            return
+        
+        config = manager.assistant_configs[assistant_name]
+        
+        click.echo(f"🔄 Resolving philosophical mistake with {config['name']}...")
+        click.echo(f"💭 Thought: {gedanke_in_weltanschauung}")
+        if aspekte:
+            click.echo(f"🎯 Aspects: {aspekte}")
+        
+        # Generate resolve prompt
+        prompt = f"""Korrigiere folgenden kulturgewordenen Gedankenfehler:
+
+** {gedanke_in_weltanschauung} **
+
+{f"Berücksichtige dabei: {aspekte}" if aspekte else ""}
+
+Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
+
+{{
+    "gedanke": "300-Wort-Korrektur aus deiner philosophischen Perspektive",
+    "gedanke_zusammenfassung": "Kurze Zusammenfassung in 30-35 Worten",
+    "gedanke_kind": "Kinderfreundliche Erklärung für 10-Jährige"
+}}
+
+Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
+        
+        # Query assistant
+        response = manager.query_assistant(
+            assistant_id=assistant_name,
+            user_message=prompt,
+            use_knowledge_base=True
+        )
+        
+        # Parse JSON response
+        try:
+            import re
+            json_match = re.search(r'\{.*\}', response["message"], re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group())
+                
+                if output_format == 'table':
+                    click.echo(f"\n✅ Resolved by {config['name']} ({config['worldview']}):")
+                    click.echo("-" * 80)
+                    click.echo(f"💡 Correction: {parsed.get('gedanke', 'N/A')}")
+                    click.echo(f"\n📝 Summary: {parsed.get('gedanke_zusammenfassung', 'N/A')}")
+                    click.echo(f"\n👶 For children: {parsed.get('gedanke_kind', 'N/A')}")
+                    click.echo(f"\n⏱️  Processing time: {response['processing_time']:.2f}s")
+                    click.echo(f"💰 Cost: ${response['usage']['cost']:.6f}")
+                
+                else:  # json
+                    result = {
+                        **parsed,
+                        "assistant_id": assistant_name,
+                        "assistant_name": config['name'],
+                        "weltanschauung": config['worldview'],
+                        "processing_time": response['processing_time'],
+                        "cost": response['usage']['cost'],
+                        "original_request": {
+                            "gedanke_in_weltanschauung": gedanke_in_weltanschauung,
+                            "aspekte": aspekte
+                        }
+                    }
+                    output = json.dumps(result, indent=2, ensure_ascii=False)
+                    click.echo(output)
+                    
+            else:
+                click.echo("❌ Could not parse JSON response from assistant")
+                click.echo(f"Raw response: {response['message']}")
+                
+        except Exception as e:
+            click.echo(f"❌ Error parsing response: {e}")
+            click.echo(f"Raw response: {response['message']}")
+        
+        # Save to file if requested
+        if output_file and json_match:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                if output_format == 'json':
+                    result = {
+                        **parsed,
+                        "assistant_id": assistant_name,
+                        "assistant_name": config['name'],
+                        "weltanschauung": config['worldview'],
+                        "processing_time": response['processing_time'],
+                        "cost": response['usage']['cost'],
+                        "original_request": {
+                            "gedanke_in_weltanschauung": gedanke_in_weltanschauung,
+                            "aspekte": aspekte
+                        }
+                    }
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+                else:  # table
+                    f.write(f"Resolved by {config['name']} ({config['worldview']}):\n")
+                    f.write("-" * 80 + "\n")
+                    f.write(f"Correction: {parsed.get('gedanke', 'N/A')}\n\n")
+                    f.write(f"Summary: {parsed.get('gedanke_zusammenfassung', 'N/A')}\n\n")
+                    f.write(f"For children: {parsed.get('gedanke_kind', 'N/A')}\n\n")
+                    f.write(f"Processing time: {response['processing_time']:.2f}s\n")
+                    f.write(f"Cost: ${response['usage']['cost']:.6f}\n")
+            
+            click.echo(f"💾 Output saved to {output_file}")
+        
+    except Exception as e:
+        click.echo(f"❌ Error resolving philosophical mistake: {str(e)}", err=True)
+        sys.exit(1)
+
+@assistants_group.command('reformulate')
+@click.argument('assistant-name')
+@click.argument('gedanke')
+@click.argument('stichwort')
+@click.option('--output-format', type=click.Choice(['table', 'json']), default='table', help='Output format')
+@click.option('--output-file', help='Save output to file')
+def assistants_reformulate(assistant_name: str, gedanke: str, stichwort: str, 
+                          output_format: str, output_file: Optional[str]):
+    """Reformulate thoughts from assistant's worldview perspective."""
+    try:
+        # Import the assistant manager
+        sys.path.insert(0, PROJECT_ROOT)
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        
+        # Verify assistant exists
+        if assistant_name not in manager.assistant_configs:
+            click.echo(f"❌ Assistant {assistant_name} not found", err=True)
+            return
+        
+        config = manager.assistant_configs[assistant_name]
+        
+        click.echo(f"🔄 Reformulating with {config['name']}...")
+        click.echo(f"💭 Original thought: {gedanke}")
+        click.echo(f"🎯 Keywords: {stichwort}")
+        
+        # Generate reformulate prompt  
+        prompt = f"""Formuliere aus der Sicht deiner Weltanschauung ({config['worldview']}) 3 philosophische Variationen zu folgendem Gedanken:
+
+Gedanke: {gedanke}
+Stichwort: {stichwort}
+
+Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
+
+{{
+    "gedanken_in_weltanschauung": [
+        "Erste Variation des Gedankens",
+        "Zweite Variation des Gedankens", 
+        "Dritte Variation des Gedankens"
+    ],
+    "gedanke": "{gedanke}"
+}}
+
+Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
+        
+        # Query assistant
+        response = manager.query_assistant(
+            assistant_id=assistant_name,
+            user_message=prompt,
+            use_knowledge_base=True
+        )
+        
+        # Parse JSON response
+        try:
+            import re
+            json_match = re.search(r'\{.*\}', response["message"], re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group())
+                
+                if output_format == 'table':
+                    click.echo(f"\n✅ Reformulated by {config['name']} ({config['worldview']}):")
+                    click.echo("-" * 80)
+                    reformulations = parsed.get('gedanken_in_weltanschauung', [])
+                    for i, reform in enumerate(reformulations, 1):
+                        click.echo(f"{i}. {reform}")
+                    click.echo(f"\n⏱️  Processing time: {response['processing_time']:.2f}s")
+                    click.echo(f"💰 Cost: ${response['usage']['cost']:.6f}")
+                
+                else:  # json
+                    result = {
+                        **parsed,
+                        "assistant_id": assistant_name,
+                        "assistant_name": config['name'],
+                        "weltanschauung": config['worldview'],
+                        "processing_time": response['processing_time'],
+                        "cost": response['usage']['cost'],
+                        "original_request": {
+                            "gedanke": gedanke,
+                            "stichwort": stichwort
+                        }
+                    }
+                    output = json.dumps(result, indent=2, ensure_ascii=False)
+                    click.echo(output)
+                    
+            else:
+                click.echo("❌ Could not parse JSON response from assistant")
+                click.echo(f"Raw response: {response['message']}")
+                
+        except Exception as e:
+            click.echo(f"❌ Error parsing response: {e}")
+            click.echo(f"Raw response: {response['message']}")
+        
+        # Save to file if requested
+        if output_file and json_match:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                if output_format == 'json':
+                    result = {
+                        **parsed,
+                        "assistant_id": assistant_name,
+                        "assistant_name": config['name'],
+                        "weltanschauung": config['worldview'],
+                        "processing_time": response['processing_time'],
+                        "cost": response['usage']['cost'],
+                        "original_request": {
+                            "gedanke": gedanke,
+                            "stichwort": stichwort
+                        }
+                    }
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+                else:  # table
+                    f.write(f"Reformulated by {config['name']} ({config['worldview']}):\n")
+                    f.write("-" * 80 + "\n")
+                    reformulations = parsed.get('gedanken_in_weltanschauung', [])
+                    for i, reform in enumerate(reformulations, 1):
+                        f.write(f"{i}. {reform}\n")
+                    f.write(f"\nProcessing time: {response['processing_time']:.2f}s\n")
+                    f.write(f"Cost: ${response['usage']['cost']:.6f}\n")
+            
+            click.echo(f"💾 Output saved to {output_file}")
+        
+    except Exception as e:
+        click.echo(f"❌ Error reformulating thought: {str(e)}", err=True)
+        sys.exit(1)
+
+@assistants_group.command('glossary')
+@click.argument('assistant-name')
+@click.option('--korrektur', help='Text to extract concepts from')
+@click.option('--begriffe', help='Comma-separated list of specific concepts to define')
+@click.option('--output-format', type=click.Choice(['table', 'json']), default='table', help='Output format')
+@click.option('--output-file', help='Save output to file')
+def assistants_glossary(assistant_name: str, korrektur: Optional[str], begriffe: Optional[str],
+                       output_format: str, output_file: Optional[str]):
+    """Generate philosophical glossary from text or concepts."""
+    try:
+        # Validate request
+        if not korrektur and not begriffe:
+            click.echo("❌ Either --korrektur or --begriffe must be provided", err=True)
+            return
+        
+        # Import the assistant manager
+        sys.path.insert(0, PROJECT_ROOT)
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        
+        # Verify assistant exists
+        if assistant_name not in manager.assistant_configs:
+            click.echo(f"❌ Assistant {assistant_name} not found", err=True)
+            return
+        
+        config = manager.assistant_configs[assistant_name]
+        
+        click.echo(f"📚 Generating glossary with {config['name']}...")
+        if korrektur:
+            click.echo(f"📝 From text: {korrektur[:100]}...")
+        if begriffe:
+            click.echo(f"🎯 Concepts: {begriffe}")
+        
+        # Generate glossary prompt
+        if korrektur:
+            text_to_process = korrektur
+        else:
+            # Create a text from provided concepts
+            begriff_list = [b.strip() for b in begriffe.split(',')]
+            text_to_process = f"Key philosophical concepts: {', '.join(begriff_list)}"
+        
+        prompt = f"""Erstelle ein philosophisches Glossar aus der Sicht deiner Weltanschauung ({config['worldview']}) für folgenden Text:
+
+{text_to_process}
+
+Extrahiere die wichtigsten philosophischen Begriffe und erkläre sie aus deiner Weltanschauung heraus.
+
+Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
+
+{{
+    "glossar": [
+        {{
+            "begriff": "Begriff 1",
+            "beschreibung": "Erklärung aus deiner Weltanschauung"
+        }},
+        {{
+            "begriff": "Begriff 2", 
+            "beschreibung": "Erklärung aus deiner Weltanschauung"
+        }}
+    ]
+}}
+
+Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
+        
+        # Query assistant
+        response = manager.query_assistant(
+            assistant_id=assistant_name,
+            user_message=prompt,
+            use_knowledge_base=True
+        )
+        
+        # Parse JSON response
+        try:
+            import re
+            json_match = re.search(r'\{.*\}', response["message"], re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group())
+                
+                if output_format == 'table':
+                    click.echo(f"\n📚 Glossary by {config['name']} ({config['worldview']}):")
+                    click.echo("-" * 80)
+                    glossary = parsed.get('glossar', [])
+                    for term in glossary:
+                        begriff = term.get('begriff', 'Unknown')
+                        beschreibung = term.get('beschreibung', 'No description')
+                        click.echo(f"\n🔖 {begriff}")
+                        click.echo(f"   {beschreibung}")
+                    click.echo(f"\n⏱️  Processing time: {response['processing_time']:.2f}s")
+                    click.echo(f"💰 Cost: ${response['usage']['cost']:.6f}")
+                
+                else:  # json
+                    result = {
+                        **parsed,
+                        "assistant_id": assistant_name,
+                        "assistant_name": config['name'],
+                        "weltanschauung": config['worldview'],
+                        "processing_time": response['processing_time'],
+                        "cost": response['usage']['cost'],
+                        "original_request": {
+                            "korrektur": korrektur,
+                            "begriffe": begriffe.split(',') if begriffe else None
+                        }
+                    }
+                    output = json.dumps(result, indent=2, ensure_ascii=False)
+                    click.echo(output)
+                    
+            else:
+                click.echo("❌ Could not parse JSON response from assistant")
+                click.echo(f"Raw response: {response['message']}")
+                
+        except Exception as e:
+            click.echo(f"❌ Error parsing response: {e}")
+            click.echo(f"Raw response: {response['message']}")
+        
+        # Save to file if requested
+        if output_file and json_match:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                if output_format == 'json':
+                    result = {
+                        **parsed,
+                        "assistant_id": assistant_name,
+                        "assistant_name": config['name'],
+                        "weltanschauung": config['worldview'],
+                        "processing_time": response['processing_time'],
+                        "cost": response['usage']['cost'],
+                        "original_request": {
+                            "korrektur": korrektur,
+                            "begriffe": begriffe.split(',') if begriffe else None
+                        }
+                    }
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+                else:  # table
+                    f.write(f"Glossary by {config['name']} ({config['worldview']}):\n")
+                    f.write("-" * 80 + "\n")
+                    glossary = parsed.get('glossar', [])
+                    for term in glossary:
+                        begriff = term.get('begriff', 'Unknown')
+                        beschreibung = term.get('beschreibung', 'No description')
+                        f.write(f"\n{begriff}\n")
+                        f.write(f"   {beschreibung}\n")
+                    f.write(f"\nProcessing time: {response['processing_time']:.2f}s\n")
+                    f.write(f"Cost: ${response['usage']['cost']:.6f}\n")
+            
+            click.echo(f"💾 Output saved to {output_file}")
+        
+    except Exception as e:
+        click.echo(f"❌ Error generating glossary: {str(e)}", err=True)
         sys.exit(1)
 
 if __name__ == '__main__':

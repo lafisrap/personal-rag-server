@@ -322,13 +322,11 @@ async def resolve_philosophical_mistake(
             aspekte=request.aspekte
         )
         
-        # Get the assistant object
-        assistant_obj = assistant_manager.pc.assistant.Assistant(assistant_name=assistant_id)
-        
-        # Send to assistant via Pinecone
-        chat_response = assistant_manager.chat_with_assistant(
-            assistant=assistant_obj,
-            message=prompt
+        # Send to assistant using new hybrid approach (DeepSeek + Pinecone)
+        chat_response = assistant_manager.query_assistant(
+            assistant_id=assistant_id,
+            user_message=prompt,
+            use_knowledge_base=True
         )
         
         # Extract the message content
@@ -390,13 +388,11 @@ async def reformulate_philosophical_thought(
             stichwort=request.stichwort
         )
         
-        # Get the assistant object
-        assistant_obj = assistant_manager.pc.assistant.Assistant(assistant_name=assistant_id)
-        
-        # Send to assistant via Pinecone
-        chat_response = assistant_manager.chat_with_assistant(
-            assistant=assistant_obj,
-            message=prompt
+        # Send to assistant using new hybrid approach (DeepSeek + Pinecone)
+        chat_response = assistant_manager.query_assistant(
+            assistant_id=assistant_id,
+            user_message=prompt,
+            use_knowledge_base=True
         )
         
         # Extract the message content
@@ -472,13 +468,11 @@ async def generate_philosophical_glossary(
                 korrektur=korrektur_text
             )
         
-        # Get the assistant object
-        assistant_obj = assistant_manager.pc.assistant.Assistant(assistant_name=assistant_id)
-        
-        # Send to assistant via Pinecone
-        chat_response = assistant_manager.chat_with_assistant(
-            assistant=assistant_obj,
-            message=prompt
+        # Send to assistant using new hybrid approach (DeepSeek + Pinecone)
+        chat_response = assistant_manager.query_assistant(
+            assistant_id=assistant_id,
+            user_message=prompt,
+            use_knowledge_base=True
         )
         
         # Extract the message content
