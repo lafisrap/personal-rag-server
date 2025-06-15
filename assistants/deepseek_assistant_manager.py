@@ -519,7 +519,7 @@ class DeepSeekAssistantManager:
             # Build response
             response_data = {
                 "message": assistant_response,
-                "citations": [],  # Could be populated from Pinecone search results
+                "citations": [],  # Will be populated below
                 "usage": {
                     "prompt_tokens": usage.prompt_tokens,
                     "completion_tokens": usage.completion_tokens,
@@ -532,6 +532,15 @@ class DeepSeekAssistantManager:
                 "worldview": worldview
             }
             
+            # Get citations from knowledge base context
+            if use_knowledge_base:
+                rag_citations = self._get_pinecone_citations(
+                    assistant_id, user_message, worldview
+                )
+                response_data["citations"] = rag_citations
+                if debug_enabled:
+                    logger.info(f"[DEBUG] RAG citations: {len(rag_citations)} results")
+
             # Add development info if in development mode
             if self.development_mode or debug_enabled:
                 response_data["development_info"] = {
@@ -566,6 +575,7 @@ class DeepSeekAssistantManager:
             # Get Pinecone index directly
             index = self._get_pinecone_index()
             if not index:
+                logger.warning("No Pinecone index available")
                 return ""
             
             # Generate embedding for the query using the same model as the knowledge base
@@ -588,6 +598,7 @@ class DeepSeekAssistantManager:
                 
             except Exception as e:
                 logger.error(f"Error generating embedding for query with model {model_name}: {e}")
+                logger.error(f"Query was: {query[:100]}...")
                 return ""
             
             # Determine the correct metadata filter field
@@ -638,11 +649,104 @@ class DeepSeekAssistantManager:
                 if content:
                     context_parts.append(f"[{i}] {source} (Score: {score:.3f}): {content}...")
             
-            return "\n".join(context_parts) if context_parts else ""
+            context = "\n".join(context_parts) if context_parts else ""
+            return context
             
         except Exception as e:
             logger.error(f"Error getting Pinecone knowledge context: {e}")
             return ""
+    
+    def _get_pinecone_citations(
+        self, 
+        assistant_id: str, 
+        query: str, 
+        worldview: str, 
+        top_k: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Get citations from Pinecone search results."""
+        try:
+            # Get Pinecone index directly
+            index = self._get_pinecone_index()
+            if not index:
+                logger.warning("No Pinecone index available for citations")
+                return []
+            
+            # Generate embedding for the query
+            try:
+                model_name = os.environ.get("EMBEDDINGS_MODEL", "T-Systems-onsite/cross-en-de-roberta-sentence-transformer")
+                
+                from sentence_transformers import SentenceTransformer
+                
+                if not hasattr(self, '_embedding_model') or self._embedding_model is None:
+                    logger.info(f"Loading embedding model for citations: {model_name}")
+                    self._embedding_model = SentenceTransformer(model_name)
+                
+                query_vector = self._embedding_model.encode(query).tolist()
+                
+            except Exception as e:
+                logger.error(f"Error generating embedding for citations: {e}")
+                return []
+            
+            # Determine metadata filter
+            metadata_filter = None
+            if worldview != "Unknown":
+                possible_filters = [
+                    {"worldview": worldview},
+                    {"category": worldview},
+                    {"weltanschauung": worldview},
+                    {"worldview": worldview.lower()},
+                    {"category": worldview.lower()}
+                ]
+                
+                for filter_option in possible_filters:
+                    try:
+                        test_response = index.query(
+                            vector=query_vector,
+                            top_k=1,
+                            include_metadata=True,
+                            filter=filter_option
+                        )
+                        if test_response.matches:
+                            metadata_filter = filter_option
+                            break
+                    except:
+                        continue
+            
+            # Query Pinecone for citations
+            query_response = index.query(
+                vector=query_vector,
+                top_k=top_k,
+                include_metadata=True,
+                filter=metadata_filter
+            )
+            
+            # Format citations
+            citations = []
+            for match in query_response.matches:
+                citation = {
+                    "score": float(match.score),
+                    "text": match.metadata.get("text", "")[:500],
+                    "source": match.metadata.get("source", match.metadata.get("title", "Unknown")),
+                    "id": match.id
+                }
+                
+                # Add additional metadata if available
+                if "author" in match.metadata:
+                    citation["author"] = match.metadata["author"]
+                if "year" in match.metadata:
+                    citation["year"] = match.metadata["year"]
+                if "page" in match.metadata:
+                    citation["page"] = match.metadata["page"]
+                
+                citations.append(citation)
+            
+            logger.debug(f"Generated {len(citations)} citations from Pinecone search")
+            return citations
+            
+        except Exception as e:
+            logger.error(f"Error getting Pinecone citations: {e}")
+            logger.exception("Full traceback:")
+            return []
     
     def _check_daily_reset(self):
         """Reset daily cost tracking if it's a new day."""

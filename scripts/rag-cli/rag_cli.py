@@ -48,6 +48,16 @@ logging.getLogger("assistants.deepseek_assistant_manager").setLevel(logging.WARN
 # Set tokenizers parallelism to avoid warnings
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
+# Suppress specific ML library warnings
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
+warnings.filterwarnings("ignore", message="No sentence-transformers model found.*")
+warnings.filterwarnings("ignore", message=".*clean_up_tokenization_spaces.*")
+
+# Additional logging configuration for ML libraries
+logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
+logging.getLogger("transformers").setLevel(logging.ERROR)
+
 # Create main CLI group
 @click.group()
 @click.version_option(version="0.1.0")
@@ -1502,6 +1512,710 @@ def assistants_group():
     """Pinecone Assistant management commands."""
     pass
 
+@assistants_group.command('gedanke-umkehren')
+@click.argument('weltanschauung')
+@click.argument('gedanke')
+@click.option('--aspekt', help='Zusätzlicher Aspekt zur Berücksichtigung')
+def assistants_gedanke_umkehren(weltanschauung: str, gedanke: str, aspekt: Optional[str]):
+    """Philosophische Gedankenfehler mit interaktiver Umformulierung korrigieren."""
+    try:
+        # Import the assistant manager
+        sys.path.insert(0, PROJECT_ROOT)
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        
+        # Find assistant by worldview (first 4 letters, case insensitive)
+        weltanschauung_short = weltanschauung[:4].lower()
+        matching_assistant = None
+        matching_config = None
+        
+        for assistant_id, config in manager.assistant_configs.items():
+            if config['worldview'][:4].lower() == weltanschauung_short:
+                matching_assistant = assistant_id
+                matching_config = config
+                break
+        
+        if not matching_assistant:
+            click.echo(f"❌ Kein Assistent für Weltanschauung '{weltanschauung}' gefunden.", err=True)
+            click.echo("Verfügbare Weltanschauungen:")
+            for assistant_id, config in manager.assistant_configs.items():
+                click.echo(f"  - {config['worldview']} ({assistant_id})")
+            return
+        
+        click.echo(f"🤖 Verwende Assistent: {matching_config['name']} ({matching_config['worldview']})")
+        click.echo(f"💭 Ursprünglicher Gedanke: {gedanke}")
+        if aspekt:
+            click.echo(f"🎯 Aspekt: {aspekt}")
+        
+        # Step 1: Reformulate the gedanke first (without aspekt)
+        click.echo(f"\n🔄 Schritt 1: Umformulierung des Gedankens...")
+        
+        reformulate_prompt = f"""Formuliere aus der Sicht deiner Weltanschauung ({matching_config['worldview']}) 3 philosophische Variationen zu folgendem Gedanken:
+
+Gedanke: {gedanke}
+
+Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
+
+{{
+    "gedanken_in_weltanschauung": [
+        "Erste Variation des Gedankens",
+        "Zweite Variation des Gedankens", 
+        "Dritte Variation des Gedankens"
+    ],
+    "gedanke": "{gedanke}"
+}}
+
+Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
+        
+        while True:
+            reformulate_response = manager.query_assistant(
+                assistant_id=matching_assistant,
+                user_message=reformulate_prompt,
+                use_knowledge_base=True
+            )
+            
+            # Parse reformulation response
+            try:
+                import re
+                json_match = re.search(r'\{.*\}', reformulate_response["message"], re.DOTALL)
+                if not json_match:
+                    click.echo("❌ Konnte JSON-Antwort nicht parsen.")
+                    return
+                    
+                parsed_reformulation = json.loads(json_match.group())
+                reformulations = parsed_reformulation.get('gedanken_in_weltanschauung', [])
+                
+                if len(reformulations) < 3:
+                    click.echo("❌ Nicht genügend Umformulierungen erhalten.")
+                    return
+                
+                # Show options to user
+                click.echo(f"\n📝 Umformulierungsoptionen von {matching_config['name']}:")
+                click.echo("-" * 60)
+                for i, reform in enumerate(reformulations, 1):
+                    click.echo(f"{i}. {reform}")
+                
+                click.echo(f"\n4. Erneut umformulieren")
+                click.echo(f"5. Abbrechen")
+                
+                # Get user choice
+                while True:
+                    try:
+                        choice = click.prompt('Wählen Sie eine Option (1-5)', type=int)
+                        if 1 <= choice <= 3:
+                            chosen_reformulation = reformulations[choice - 1]
+                            break
+                        elif choice == 4:
+                            click.echo("\n🔄 Erneute Umformulierung...")
+                            break
+                        elif choice == 5:
+                            click.echo("❌ Vorgang abgebrochen.")
+                            return
+                        else:
+                            click.echo("❌ Ungültige Auswahl. Bitte wählen Sie 1-5.")
+                    except click.Abort:
+                        click.echo("\n❌ Vorgang abgebrochen.")
+                        return
+                    except (ValueError, TypeError):
+                        click.echo("❌ Bitte geben Sie eine Zahl zwischen 1 und 5 ein.")
+                
+                if 1 <= choice <= 3:
+                    break  # Exit the reformulation loop
+                    
+            except Exception as e:
+                click.echo(f"❌ Fehler beim Parsen der Umformulierung: {e}")
+                return
+        
+        # Step 2: Use chosen reformulation for resolve
+        click.echo(f"\n✅ Gewählte Umformulierung: {chosen_reformulation}")
+        click.echo(f"\n🔄 Schritt 2: Korrektur des Gedankenfehlers...")
+        
+        while True:
+            resolve_prompt = f"""Korrigiere folgenden kulturgewordenen Gedankenfehler:
+
+** {chosen_reformulation} **
+
+{f"Berücksichtige dabei: {aspekt}" if aspekt else ""}
+
+Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
+
+{{
+    "gedanke": "300-Wort-Korrektur aus deiner philosophischen Perspektive",
+    "gedanke_zusammenfassung": "Kurze Zusammenfassung in 30-35 Worten",
+    "gedanke_kind": "Kinderfreundliche Erklärung für 10-Jährige"
+}}
+
+Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
+            
+            resolve_response = manager.query_assistant(
+                assistant_id=matching_assistant,
+                user_message=resolve_prompt,
+                use_knowledge_base=True
+            )
+            
+            # Parse resolve response
+            try:
+                json_match = re.search(r'\{.*\}', resolve_response["message"], re.DOTALL)
+                if not json_match:
+                    click.echo("❌ Konnte JSON-Antwort nicht parsen.")
+                    return
+                    
+                parsed_resolve = json.loads(json_match.group())
+                
+                # Display result
+                click.echo(f"\n✅ Korrektur von {matching_config['name']} ({matching_config['worldview']}):")
+                click.echo("=" * 80)
+                click.echo(f"💡 Korrektur: {parsed_resolve.get('gedanke', 'N/A')}")
+                click.echo(f"\n📝 Zusammenfassung: {parsed_resolve.get('gedanke_zusammenfassung', 'N/A')}")
+                click.echo(f"\n👶 Für Kinder: {parsed_resolve.get('gedanke_kind', 'N/A')}")
+                click.echo(f"\n⏱️ Verarbeitungszeit: {resolve_response['processing_time']:.2f}s")
+                click.echo(f"💰 Kosten: ${resolve_response['usage']['cost']:.6f}")
+                
+                # Ask for user decision
+                click.echo(f"\n" + "=" * 80)
+                click.echo("Was möchten Sie tun?")
+                click.echo("1. Ergebnis akzeptieren und speichern")
+                click.echo("2. Ergebnis ablehnen")
+                click.echo("3. Aspekt hinzufügen/ändern")
+                
+                while True:
+                    try:
+                        decision = click.prompt('Wählen Sie eine Option (1-3)', type=int)
+                        if decision == 1:
+                            # Save to file
+                            result_data = {
+                                "timestamp": datetime.now().isoformat(),
+                                "urspruenglicher_gedanke": gedanke,
+                                "gewaehlte_umformulierung": chosen_reformulation,
+                                "weltanschauung": matching_config['worldview'],
+                                "assistent": matching_config['name'],
+                                "aspekt": aspekt,
+                                "korrektur": parsed_resolve,
+                                "verarbeitungszeit": resolve_response['processing_time'],
+                                "kosten": resolve_response['usage']['cost']
+                            }
+                            
+                            with open('tmp-gedanke.json', 'w', encoding='utf-8') as f:
+                                json.dump(result_data, f, indent=2, ensure_ascii=False)
+                            
+                            click.echo(f"\n💾 Ergebnis wurde in 'tmp-gedanke.json' gespeichert.")
+                            click.echo("✅ Vorgang erfolgreich abgeschlossen.")
+                            return
+                            
+                        elif decision == 2:
+                            click.echo("❌ Ergebnis abgelehnt. Vorgang beendet.")
+                            return
+                            
+                        elif decision == 3:
+                            new_aspekt = click.prompt('Neuen Aspekt eingeben (oder Enter für leeren Aspekt)', default='', show_default=False)
+                            aspekt = new_aspekt if new_aspekt.strip() else None
+                            click.echo(f"\n🔄 Wiederhole Korrektur mit {'neuem' if aspekt else 'ohne'} Aspekt...")
+                            if aspekt:
+                                click.echo(f"🎯 Neuer Aspekt: {aspekt}")
+                            break  # Exit decision loop to retry resolve
+                            
+                        else:
+                            click.echo("❌ Ungültige Auswahl. Bitte wählen Sie 1-3.")
+                    except click.Abort:
+                        click.echo("\n❌ Vorgang abgebrochen.")
+                        return
+                    except (ValueError, TypeError):
+                        click.echo("❌ Bitte geben Sie eine Zahl zwischen 1 und 3 ein.")
+                
+                if decision != 3:
+                    break  # Exit resolve loop
+                    
+            except Exception as e:
+                click.echo(f"❌ Fehler beim Parsen der Korrektur: {e}")
+                return
+        
+    except Exception as e:
+        click.echo(f"❌ Fehler bei der Gedankenumkehr: {str(e)}", err=True)
+        sys.exit(1)
+
+@assistants_group.command('gedankenfehler-umkehren')
+@click.option('--weltanschauung', '-w', required=True, help='Weltanschauung zur Auswahl des Assistenten')
+@click.option('--output-format', type=click.Choice(['table', 'json']), default='table', help='Output format')
+@click.option('--output-file', help='Save output to file')
+def assistants_gedankenfehler_umkehren(weltanschauung: str, 
+                          output_format: str, output_file: Optional[str]):
+    """Select and correct philosophical thought errors from predefined list."""
+    try:
+        # Load gedankenfehler from YAML file
+        import yaml
+        gedankenfehler_file = os.path.join(PROJECT_ROOT, 'base_data', 'gedankenfehler.yaml')
+        
+        try:
+            with open(gedankenfehler_file, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+                gedankenfehler_list = data['gedankenfehler']
+        except FileNotFoundError:
+            click.echo(f"❌ Gedankenfehler-Datei nicht gefunden: {gedankenfehler_file}", err=True)
+            return
+        except Exception as e:
+            click.echo(f"❌ Fehler beim Laden der Gedankenfehler-Datei: {e}", err=True)
+            return
+        
+        # Display gedankenfehler list
+        click.echo("📋 Verfügbare Gedankenfehler:")
+        click.echo("=" * 80)
+        for fehler in gedankenfehler_list:
+            nummer = fehler['nummer']
+            gedankenfehler_text = fehler['gedankenfehler']
+            click.echo(f"{nummer:2d}. {gedankenfehler_text}")
+        
+        # Get user selection
+        while True:
+            try:
+                selection = click.prompt(f'\nWählen Sie einen Gedankenfehler (1-{len(gedankenfehler_list)})', type=int)
+                if 1 <= selection <= len(gedankenfehler_list):
+                    selected_fehler = gedankenfehler_list[selection - 1]
+                    gedanke = selected_fehler['gedankenfehler']
+                    stichwort = selected_fehler['stichwort']
+                    break
+                else:
+                    click.echo(f"❌ Bitte wählen Sie eine Zahl zwischen 1 und {len(gedankenfehler_list)}.")
+            except click.Abort:
+                click.echo("\n❌ Vorgang abgebrochen.")
+                return
+            except (ValueError, TypeError):
+                click.echo(f"❌ Bitte geben Sie eine gültige Zahl ein.")
+        
+        # Import the assistant manager
+        sys.path.insert(0, PROJECT_ROOT)
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        
+        # Find assistant by worldview (first 4 letters, case insensitive)
+        weltanschauung_short = weltanschauung[:4].lower()
+        matching_assistant = None
+        matching_config = None
+        
+        for assistant_id, config in manager.assistant_configs.items():
+            if config['worldview'][:4].lower() == weltanschauung_short:
+                matching_assistant = assistant_id
+                matching_config = config
+                break
+        
+        if not matching_assistant:
+            click.echo(f"❌ Kein Assistent für Weltanschauung '{weltanschauung}' gefunden.", err=True)
+            click.echo("Verfügbare Weltanschauungen:")
+            for assistant_id, config in manager.assistant_configs.items():
+                click.echo(f"  - {config['worldview']} ({assistant_id})")
+            return
+        
+        click.echo(f"\n🔄 Reformulating with {matching_config['name']}...")
+        click.echo(f"💭 Ausgewählter Gedankenfehler: {gedanke}")
+        click.echo(f"🏷️  Stichwort: {stichwort}")
+        
+        # Generate reformulate prompt  
+        prompt = f"""Formuliere aus der Sicht deiner Weltanschauung ({matching_config['worldview']}) 3 philosophische Variationen zu folgendem Gedanken:
+
+Gedanke: {gedanke}
+
+Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
+
+{{
+    "gedanken_in_weltanschauung": [
+        "Erste Variation des Gedankens",
+        "Zweite Variation des Gedankens", 
+        "Dritte Variation des Gedankens"
+    ],
+    "gedanke": "{gedanke}"
+}}
+
+Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
+        
+        # Query assistant
+        response = manager.query_assistant(
+            assistant_id=matching_assistant,
+            user_message=prompt,
+            use_knowledge_base=True
+        )
+        
+        # Parse JSON response
+        while True:
+            try:
+                import re
+                json_match = re.search(r'\{.*\}', response["message"], re.DOTALL)
+                if not json_match:
+                    click.echo("❌ Konnte JSON-Antwort nicht parsen.")
+                    return
+                    
+                parsed = json.loads(json_match.group())
+                reformulations = parsed.get('gedanken_in_weltanschauung', [])
+                
+                if len(reformulations) < 3:
+                    click.echo("❌ Nicht genügend Umformulierungen erhalten.")
+                    return
+                
+                # Show options to user
+                click.echo(f"\n📝 Umformulierungsoptionen von {matching_config['name']}:")
+                click.echo("-" * 60)
+                for i, reform in enumerate(reformulations, 1):
+                    click.echo(f"{i}. {reform}")
+                
+                click.echo(f"\n4. Erneut umformulieren")
+                click.echo(f"5. Abbrechen")
+                
+                # Get user choice
+                while True:
+                    try:
+                        choice = click.prompt('Wählen Sie eine Option (1-5)', type=int)
+                        if 1 <= choice <= 3:
+                            chosen_reformulation = reformulations[choice - 1]
+                            
+                            # Display chosen reformulation and results
+                            click.echo(f"\n✅ Gewählte Umformulierung:")
+                            click.echo("=" * 80)
+                            click.echo(f"💭 {chosen_reformulation}")
+                            click.echo(f"\n🤖 Von: {matching_config['name']} ({matching_config['worldview']})")
+                            click.echo(f"⏱️  Verarbeitungszeit: {response['processing_time']:.2f}s")
+                            click.echo(f"💰 Kosten: ${response['usage']['cost']:.6f}")
+                            
+                            # Step 2: Process with gedankenfehler template
+                            click.echo(f"\n🔄 Schritt 2: Korrektur des Gedankenfehlers...")
+                            
+                            aspekt = ""  # Start with empty aspekt
+                            
+                            while True:
+                                try:
+                                    # Generate resolve prompt
+                                    resolve_prompt = f"""Du bist ein Experte der philosophischen Weltanschauung {matching_config['worldview']}. 
+
+Korrigiere folgenden kulturgewordenen Gedankenfehler:
+
+** {chosen_reformulation} **
+
+{f"Berücksichtige dabei: {aspekt}" if aspekt else ""}
+
+Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
+
+{{
+    "gedanke": "300-Wort-Korrektur aus deiner philosophischen Perspektive",
+    "gedanke_kurz": "Kurze Zusammenfassung in 30-35 Worten",
+    "gedanke_einfach": "Kinderfreundliche Erklärung für 10-Jährige"
+}}
+
+Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
+                                    
+                                    # Query assistant with built-in RAG enabled
+                                    click.echo(f"\n🤖 Sende Anfrage an {matching_config['name']}...")
+                                    
+                                    resolve_response = manager.query_assistant(
+                                        assistant_id=matching_assistant,
+                                        user_message=resolve_prompt,
+                                        use_knowledge_base=True,  # Use assistant's built-in RAG
+                                        debug_mode=True  # Enable debug logging to see RAG results
+                                    )
+                                    
+                                    # Parse resolve response
+                                    json_match = re.search(r'\{.*\}', resolve_response["message"], re.DOTALL)
+                                    if not json_match:
+                                        click.echo("❌ Konnte JSON-Antwort nicht parsen.")
+                                        return
+                                        
+                                    template_result = json.loads(json_match.group())
+                                    
+                                    # Use assistant's RAG citations
+                                    rag_data = resolve_response.get("citations", [])
+                                    
+                                    click.echo(f"📚 {len(rag_data)} relevante Quellen aus RAG gefunden")
+                                    
+                                    # Calculate totals for display
+                                    total_processing_time = response['processing_time'] + resolve_response['processing_time']
+                                    total_cost = response['usage']['cost'] + resolve_response['usage']['cost']
+                                    
+                                    # Display result
+                                    click.echo(f"\n✅ Korrektur von {matching_config['name']} ({matching_config['worldview']}):")
+                                    click.echo("=" * 80)
+                                    click.echo(f"💡 Korrektur: {template_result.get('gedanke', 'N/A')}")
+                                    click.echo(f"\n📝 Zusammenfassung: {template_result.get('gedanke_kurz', template_result.get('gedanke_zusammenfassung', 'N/A'))}")
+                                    click.echo(f"\n👶 Für Kinder: {template_result.get('gedanke_einfach', template_result.get('gedanke_kind', 'N/A'))}")
+                                    click.echo(f"\n🤖 Model: {resolve_response.get('model', matching_config.get('model', 'unknown'))}")
+                                    click.echo(f"📚 Pinecone Quellen: {len(rag_data)} verwendet")
+                                    if rag_data:
+                                        # Show source summary
+                                        authors = list(set(result.get('metadata', {}).get('author', 'Unbekannt') for result in rag_data))
+                                        click.echo(f"👥 Autoren: {', '.join(authors[:3])}{' ...' if len(authors) > 3 else ''}")
+                                    click.echo(f"⏱️ Gesamte Verarbeitungszeit: {total_processing_time:.2f}s")
+                                    click.echo(f"💰 Gesamte Kosten: ${total_cost:.6f}")
+                                    
+                                    # Ask for user decision
+                                    click.echo(f"\n" + "=" * 80)
+                                    click.echo("Was möchten Sie tun?")
+                                    click.echo("1. Ergebnis akzeptieren und speichern")
+                                    click.echo("2. Ergebnis ablehnen")
+                                    click.echo("3. Aspekt hinzufügen")
+                                    
+                                    while True:
+                                        try:
+                                            decision = click.prompt('Wählen Sie eine Option (1-3)', type=int)
+                                            if decision == 1:
+                                                # Save to file (using already calculated totals)
+                                                result_data = {
+                                                    "timestamp": datetime.now().isoformat(),
+                                                    "ausgewaehlter_gedankenfehler": {
+                                                        "nummer": selected_fehler['nummer'],
+                                                        "stichwort": selected_fehler['stichwort'],
+                                                        "text": gedanke
+                                                    },
+                                                    "gewaehlte_umformulierung": chosen_reformulation,
+                                                    "weltanschauung": matching_config['worldview'],
+                                                    "assistent": matching_config['name'],
+                                                    "model": resolve_response.get('model', matching_config.get('model', 'unknown')),
+                                                    "aspekt": aspekt if aspekt else None,
+                                                    "korrektur": template_result,
+                                                    "rag_result": rag_data,
+                                                    "gesamte_verarbeitungszeit": total_processing_time,
+                                                    "gesamte_kosten": total_cost
+                                                }
+                                                
+                                                # Save to JSON file
+                                                json_filename = 'tmp-gedanke.json'
+                                                with open(json_filename, 'w', encoding='utf-8') as f:
+                                                    json.dump(result_data, f, indent=2, ensure_ascii=False)
+                                                
+                                                click.echo(f"\n💾 Ergebnis wurde in '{json_filename}' gespeichert.")
+                                                
+                                                # Also save to output file if requested
+                                                if output_file:
+                                                    with open(output_file, 'w', encoding='utf-8') as f:
+                                                        if output_format == 'json':
+                                                            json.dump(result_data, f, indent=2, ensure_ascii=False)
+                                                        else:  # table
+                                                            f.write(f"Ausgewählter Gedankenfehler: [{selected_fehler['stichwort']}] {gedanke}\n")
+                                                            f.write(f"Gewählte Umformulierung: {chosen_reformulation}\n\n")
+                                                            f.write(f"Korrektur: {template_result.get('gedanke', 'N/A')}\n\n")
+                                                            f.write(f"Zusammenfassung: {template_result.get('gedanke_kurz', template_result.get('gedanke_zusammenfassung', 'N/A'))}\n\n")
+                                                            f.write(f"Für Kinder: {template_result.get('gedanke_einfach', template_result.get('gedanke_kind', 'N/A'))}\n\n")
+                                                            f.write(f"Von: {matching_config['name']} ({matching_config['worldview']})\n")
+                                                            f.write(f"Model: {resolve_response.get('model', matching_config.get('model', 'unknown'))}\n")
+                                                            f.write(f"Aspekt: {aspekt if aspekt else 'Keiner'}\n")
+                                                            f.write(f"RAG Quellen: {len(rag_data)} gefunden\n")
+                                                            f.write(f"Gesamte Verarbeitungszeit: {total_processing_time:.2f}s\n")
+                                                            f.write(f"Gesamte Kosten: ${total_cost:.6f}\n")
+                                                    
+                                                    click.echo(f"💾 Zusätzlich gespeichert in '{output_file}'.")
+                                                
+                                                click.echo(f"✅ Umformulierung und Korrektur erfolgreich abgeschlossen.")
+                                                click.echo(f"📊 Gesamt: {total_processing_time:.2f}s, ${total_cost:.6f}")
+                                                return
+                                                
+                                            elif decision == 2:
+                                                click.echo("❌ Ergebnis abgelehnt. Vorgang beendet.")
+                                                return
+                                                
+                                            elif decision == 3:
+                                                new_aspekt = click.prompt('Neuen Aspekt eingeben (oder Enter für leeren Aspekt)', default='', show_default=False)
+                                                aspekt = new_aspekt if new_aspekt.strip() else ""
+                                                click.echo(f"\n🔄 Wiederhole Korrektur mit {'neuem' if aspekt else 'ohne'} Aspekt...")
+                                                if aspekt:
+                                                    click.echo(f"🎯 Neuer Aspekt: {aspekt}")
+                                                break  # Exit decision loop to retry template processing
+                                                
+                                            else:
+                                                click.echo("❌ Ungültige Auswahl. Bitte wählen Sie 1-3.")
+                                        except click.Abort:
+                                            click.echo("\n❌ Vorgang abgebrochen.")
+                                            return
+                                        except (ValueError, TypeError):
+                                            click.echo("❌ Bitte geben Sie eine Zahl zwischen 1 und 3 ein.")
+                                    
+                                    if decision != 3:
+                                        break  # Exit template processing loop
+                                        
+                                except Exception as e:
+                                    click.echo(f"❌ Fehler bei der Gedankenfehler-Verarbeitung: {str(e)}")
+                                    return
+                            
+                            return
+                            
+                        elif choice == 4:
+                            click.echo("\n🔄 Erneute Umformulierung...")
+                            # Regenerate response
+                            response = manager.query_assistant(
+                                assistant_id=matching_assistant,
+                                user_message=prompt,
+                                use_knowledge_base=True
+                            )
+                            break  # Exit inner loop to retry parsing
+                            
+                        elif choice == 5:
+                            click.echo("❌ Vorgang abgebrochen.")
+                            return
+                        else:
+                            click.echo("❌ Ungültige Auswahl. Bitte wählen Sie 1-5.")
+                    except click.Abort:
+                        click.echo("\n❌ Vorgang abgebrochen.")
+                        return
+                    except (ValueError, TypeError):
+                        click.echo("❌ Bitte geben Sie eine Zahl zwischen 1 und 5 ein.")
+                
+                # If we reach here, user chose option 4 (redo), so continue the while loop
+                
+            except Exception as e:
+                click.echo(f"❌ Fehler beim Parsen der Umformulierung: {e}")
+                return
+        
+    except Exception as e:
+        click.echo(f"❌ Error correcting thought error: {str(e)}", err=True)
+        sys.exit(1)
+
+@assistants_group.command('glossar')
+@click.argument('assistant-name')
+@click.option('--korrektur', help='Text to extract concepts from')
+@click.option('--begriffe', help='Comma-separated list of specific concepts to define')
+@click.option('--output-format', type=click.Choice(['table', 'json']), default='table', help='Output format')
+@click.option('--output-file', help='Save output to file')
+def assistants_glossar(assistant_name: str, korrektur: Optional[str], begriffe: Optional[str],
+                       output_format: str, output_file: Optional[str]):
+    """Generate philosophical glossary from text or concepts."""
+    try:
+        # Validate request
+        if not korrektur and not begriffe:
+            click.echo("❌ Either --korrektur or --begriffe must be provided", err=True)
+            return
+        
+        # Import the assistant manager
+        sys.path.insert(0, PROJECT_ROOT)
+        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
+        
+        manager = PineconeAssistantManager()
+        
+        # Verify assistant exists
+        if assistant_name not in manager.assistant_configs:
+            click.echo(f"❌ Assistant {assistant_name} not found", err=True)
+            return
+        
+        config = manager.assistant_configs[assistant_name]
+        
+        click.echo(f"📚 Generating glossary with {config['name']}...")
+        if korrektur:
+            click.echo(f"📝 From text: {korrektur[:100]}...")
+        if begriffe:
+            click.echo(f"🎯 Concepts: {begriffe}")
+        
+        # Generate glossary prompt
+        if korrektur:
+            text_to_process = korrektur
+        else:
+            # Create a text from provided concepts
+            begriff_list = [b.strip() for b in begriffe.split(',')]
+            text_to_process = f"Key philosophical concepts: {', '.join(begriff_list)}"
+        
+        prompt = f"""Erstelle ein philosophisches Glossar aus der Sicht deiner Weltanschauung ({config['worldview']}) für folgenden Text:
+
+{text_to_process}
+
+Extrahiere nur die wichtigsten philosophischen EINZELBEGRIFFE (einzelne Substantive) und erkläre sie aus deiner Weltanschauung heraus.
+
+WICHTIG: Verwende nur einzelne Substantive wie "Erziehung", "Kind", "Harmonie", "Seele" - NICHT zusammengesetzte Begriffe oder Phrasen.
+
+Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
+
+{{
+    "glossar": [
+        {{
+            "begriff": "Begriff1",
+            "beschreibung": "Erklärung aus deiner Weltanschauung"
+        }},
+        {{
+            "begriff": "Begriff2", 
+            "beschreibung": "Erklärung aus deiner Weltanschauung"
+        }}
+    ]
+}}
+
+Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
+        
+        # Query assistant
+        response = manager.query_assistant(
+            assistant_id=assistant_name,
+            user_message=prompt,
+            use_knowledge_base=True
+        )
+        
+        # Parse JSON response
+        try:
+            import re
+            json_match = re.search(r'\{.*\}', response["message"], re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group())
+                
+                if output_format == 'table':
+                    click.echo(f"\n📚 Glossary by {config['name']} ({config['worldview']}):")
+                    click.echo("-" * 80)
+                    glossary = parsed.get('glossar', [])
+                    for term in glossary:
+                        begriff = term.get('begriff', 'Unknown')
+                        beschreibung = term.get('beschreibung', 'No description')
+                        click.echo(f"\n🔖 {begriff}")
+                        click.echo(f"   {beschreibung}")
+                    click.echo(f"\n⏱️  Processing time: {response['processing_time']:.2f}s")
+                    click.echo(f"💰 Cost: ${response['usage']['cost']:.6f}")
+                
+                else:  # json
+                    result = {
+                        **parsed,
+                        "assistant_id": assistant_name,
+                        "assistant_name": config['name'],
+                        "weltanschauung": config['worldview'],
+                        "processing_time": response['processing_time'],
+                        "cost": response['usage']['cost'],
+                        "original_request": {
+                            "korrektur": korrektur,
+                            "begriffe": begriffe.split(',') if begriffe else None
+                        }
+                    }
+                    output = json.dumps(result, indent=2, ensure_ascii=False)
+                    click.echo(output)
+                    
+            else:
+                click.echo("❌ Could not parse JSON response from assistant")
+                click.echo(f"Raw response: {response['message']}")
+                
+        except Exception as e:
+            click.echo(f"❌ Error parsing response: {e}")
+            click.echo(f"Raw response: {response['message']}")
+        
+        # Save to file if requested
+        if output_file and json_match:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                if output_format == 'json':
+                    result = {
+                        **parsed,
+                        "assistant_id": assistant_name,
+                        "assistant_name": config['name'],
+                        "weltanschauung": config['worldview'],
+                        "processing_time": response['processing_time'],
+                        "cost": response['usage']['cost'],
+                        "original_request": {
+                            "korrektur": korrektur,
+                            "begriffe": begriffe.split(',') if begriffe else None
+                        }
+                    }
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+                else:  # table
+                    f.write(f"Glossary by {config['name']} ({config['worldview']}):\n")
+                    f.write("-" * 80 + "\n")
+                    glossary = parsed.get('glossar', [])
+                    for term in glossary:
+                        begriff = term.get('begriff', 'Unknown')
+                        beschreibung = term.get('beschreibung', 'No description')
+                        f.write(f"\n{begriff}\n")
+                        f.write(f"   {beschreibung}\n")
+                    f.write(f"\nProcessing time: {response['processing_time']:.2f}s\n")
+                    f.write(f"Cost: ${response['usage']['cost']:.6f}\n")
+            
+            click.echo(f"💾 Output saved to {output_file}")
+        
+    except Exception as e:
+        click.echo(f"❌ Error generating glossary: {str(e)}", err=True)
+        sys.exit(1)
+
 @assistants_group.command('models')
 def assistants_models():
     """Show available LLM models for Pinecone Assistant."""
@@ -2063,404 +2777,7 @@ def assistants_context(assistant_name: str, query: str, top_k: int,
         click.echo(f"Error querying context: {str(e)}", err=True)
         sys.exit(1)
 
-@assistants_group.command('resolve')
-@click.argument('assistant-name')
-@click.argument('gedanke-in-weltanschauung')
-@click.option('--aspekte', help='Additional aspects to consider')
-@click.option('--output-format', type=click.Choice(['table', 'json']), default='table', help='Output format')
-@click.option('--output-file', help='Save output to file')
-def assistants_resolve(assistant_name: str, gedanke_in_weltanschauung: str, aspekte: Optional[str], 
-                      output_format: str, output_file: Optional[str]):
-    """Correct philosophical misconceptions from assistant's worldview."""
-    try:
-        # Import the assistant manager
-        sys.path.insert(0, PROJECT_ROOT)
-        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
-        
-        manager = PineconeAssistantManager()
-        
-        # Verify assistant exists
-        if assistant_name not in manager.assistant_configs:
-            click.echo(f"❌ Assistant {assistant_name} not found", err=True)
-            return
-        
-        config = manager.assistant_configs[assistant_name]
-        
-        click.echo(f"🔄 Resolving philosophical mistake with {config['name']}...")
-        click.echo(f"💭 Thought: {gedanke_in_weltanschauung}")
-        if aspekte:
-            click.echo(f"🎯 Aspects: {aspekte}")
-        
-        # Generate resolve prompt
-        prompt = f"""Korrigiere folgenden kulturgewordenen Gedankenfehler:
 
-** {gedanke_in_weltanschauung} **
-
-{f"Berücksichtige dabei: {aspekte}" if aspekte else ""}
-
-Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
-
-{{
-    "gedanke": "300-Wort-Korrektur aus deiner philosophischen Perspektive",
-    "gedanke_zusammenfassung": "Kurze Zusammenfassung in 30-35 Worten",
-    "gedanke_kind": "Kinderfreundliche Erklärung für 10-Jährige"
-}}
-
-Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
-        
-        # Query assistant
-        response = manager.query_assistant(
-            assistant_id=assistant_name,
-            user_message=prompt,
-            use_knowledge_base=True
-        )
-        
-        # Parse JSON response
-        try:
-            import re
-            json_match = re.search(r'\{.*\}', response["message"], re.DOTALL)
-            if json_match:
-                parsed = json.loads(json_match.group())
-                
-                if output_format == 'table':
-                    click.echo(f"\n✅ Resolved by {config['name']} ({config['worldview']}):")
-                    click.echo("-" * 80)
-                    click.echo(f"💡 Correction: {parsed.get('gedanke', 'N/A')}")
-                    click.echo(f"\n📝 Summary: {parsed.get('gedanke_zusammenfassung', 'N/A')}")
-                    click.echo(f"\n👶 For children: {parsed.get('gedanke_kind', 'N/A')}")
-                    click.echo(f"\n⏱️  Processing time: {response['processing_time']:.2f}s")
-                    click.echo(f"💰 Cost: ${response['usage']['cost']:.6f}")
-                
-                else:  # json
-                    result = {
-                        **parsed,
-                        "assistant_id": assistant_name,
-                        "assistant_name": config['name'],
-                        "weltanschauung": config['worldview'],
-                        "processing_time": response['processing_time'],
-                        "cost": response['usage']['cost'],
-                        "original_request": {
-                            "gedanke_in_weltanschauung": gedanke_in_weltanschauung,
-                            "aspekte": aspekte
-                        }
-                    }
-                    output = json.dumps(result, indent=2, ensure_ascii=False)
-                    click.echo(output)
-                    
-            else:
-                click.echo("❌ Could not parse JSON response from assistant")
-                click.echo(f"Raw response: {response['message']}")
-                
-        except Exception as e:
-            click.echo(f"❌ Error parsing response: {e}")
-            click.echo(f"Raw response: {response['message']}")
-        
-        # Save to file if requested
-        if output_file and json_match:
-            with open(output_file, 'w', encoding='utf-8') as f:
-                if output_format == 'json':
-                    result = {
-                        **parsed,
-                        "assistant_id": assistant_name,
-                        "assistant_name": config['name'],
-                        "weltanschauung": config['worldview'],
-                        "processing_time": response['processing_time'],
-                        "cost": response['usage']['cost'],
-                        "original_request": {
-                            "gedanke_in_weltanschauung": gedanke_in_weltanschauung,
-                            "aspekte": aspekte
-                        }
-                    }
-                    json.dump(result, f, indent=2, ensure_ascii=False)
-                else:  # table
-                    f.write(f"Resolved by {config['name']} ({config['worldview']}):\n")
-                    f.write("-" * 80 + "\n")
-                    f.write(f"Correction: {parsed.get('gedanke', 'N/A')}\n\n")
-                    f.write(f"Summary: {parsed.get('gedanke_zusammenfassung', 'N/A')}\n\n")
-                    f.write(f"For children: {parsed.get('gedanke_kind', 'N/A')}\n\n")
-                    f.write(f"Processing time: {response['processing_time']:.2f}s\n")
-                    f.write(f"Cost: ${response['usage']['cost']:.6f}\n")
-            
-            click.echo(f"💾 Output saved to {output_file}")
-        
-    except Exception as e:
-        click.echo(f"❌ Error resolving philosophical mistake: {str(e)}", err=True)
-        sys.exit(1)
-
-@assistants_group.command('reformulate')
-@click.argument('assistant-name')
-@click.argument('gedanke')
-@click.argument('stichwort')
-@click.option('--output-format', type=click.Choice(['table', 'json']), default='table', help='Output format')
-@click.option('--output-file', help='Save output to file')
-def assistants_reformulate(assistant_name: str, gedanke: str, stichwort: str, 
-                          output_format: str, output_file: Optional[str]):
-    """Reformulate thoughts from assistant's worldview perspective."""
-    try:
-        # Import the assistant manager
-        sys.path.insert(0, PROJECT_ROOT)
-        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
-        
-        manager = PineconeAssistantManager()
-        
-        # Verify assistant exists
-        if assistant_name not in manager.assistant_configs:
-            click.echo(f"❌ Assistant {assistant_name} not found", err=True)
-            return
-        
-        config = manager.assistant_configs[assistant_name]
-        
-        click.echo(f"🔄 Reformulating with {config['name']}...")
-        click.echo(f"💭 Original thought: {gedanke}")
-        click.echo(f"🎯 Keywords: {stichwort}")
-        
-        # Generate reformulate prompt  
-        prompt = f"""Formuliere aus der Sicht deiner Weltanschauung ({config['worldview']}) 3 philosophische Variationen zu folgendem Gedanken:
-
-Gedanke: {gedanke}
-Stichwort: {stichwort}
-
-Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
-
-{{
-    "gedanken_in_weltanschauung": [
-        "Erste Variation des Gedankens",
-        "Zweite Variation des Gedankens", 
-        "Dritte Variation des Gedankens"
-    ],
-    "gedanke": "{gedanke}"
-}}
-
-Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
-        
-        # Query assistant
-        response = manager.query_assistant(
-            assistant_id=assistant_name,
-            user_message=prompt,
-            use_knowledge_base=True
-        )
-        
-        # Parse JSON response
-        try:
-            import re
-            json_match = re.search(r'\{.*\}', response["message"], re.DOTALL)
-            if json_match:
-                parsed = json.loads(json_match.group())
-                
-                if output_format == 'table':
-                    click.echo(f"\n✅ Reformulated by {config['name']} ({config['worldview']}):")
-                    click.echo("-" * 80)
-                    reformulations = parsed.get('gedanken_in_weltanschauung', [])
-                    for i, reform in enumerate(reformulations, 1):
-                        click.echo(f"{i}. {reform}")
-                    click.echo(f"\n⏱️  Processing time: {response['processing_time']:.2f}s")
-                    click.echo(f"💰 Cost: ${response['usage']['cost']:.6f}")
-                
-                else:  # json
-                    result = {
-                        **parsed,
-                        "assistant_id": assistant_name,
-                        "assistant_name": config['name'],
-                        "weltanschauung": config['worldview'],
-                        "processing_time": response['processing_time'],
-                        "cost": response['usage']['cost'],
-                        "original_request": {
-                            "gedanke": gedanke,
-                            "stichwort": stichwort
-                        }
-                    }
-                    output = json.dumps(result, indent=2, ensure_ascii=False)
-                    click.echo(output)
-                    
-            else:
-                click.echo("❌ Could not parse JSON response from assistant")
-                click.echo(f"Raw response: {response['message']}")
-                
-        except Exception as e:
-            click.echo(f"❌ Error parsing response: {e}")
-            click.echo(f"Raw response: {response['message']}")
-        
-        # Save to file if requested
-        if output_file and json_match:
-            with open(output_file, 'w', encoding='utf-8') as f:
-                if output_format == 'json':
-                    result = {
-                        **parsed,
-                        "assistant_id": assistant_name,
-                        "assistant_name": config['name'],
-                        "weltanschauung": config['worldview'],
-                        "processing_time": response['processing_time'],
-                        "cost": response['usage']['cost'],
-                        "original_request": {
-                            "gedanke": gedanke,
-                            "stichwort": stichwort
-                        }
-                    }
-                    json.dump(result, f, indent=2, ensure_ascii=False)
-                else:  # table
-                    f.write(f"Reformulated by {config['name']} ({config['worldview']}):\n")
-                    f.write("-" * 80 + "\n")
-                    reformulations = parsed.get('gedanken_in_weltanschauung', [])
-                    for i, reform in enumerate(reformulations, 1):
-                        f.write(f"{i}. {reform}\n")
-                    f.write(f"\nProcessing time: {response['processing_time']:.2f}s\n")
-                    f.write(f"Cost: ${response['usage']['cost']:.6f}\n")
-            
-            click.echo(f"💾 Output saved to {output_file}")
-        
-    except Exception as e:
-        click.echo(f"❌ Error reformulating thought: {str(e)}", err=True)
-        sys.exit(1)
-
-@assistants_group.command('glossary')
-@click.argument('assistant-name')
-@click.option('--korrektur', help='Text to extract concepts from')
-@click.option('--begriffe', help='Comma-separated list of specific concepts to define')
-@click.option('--output-format', type=click.Choice(['table', 'json']), default='table', help='Output format')
-@click.option('--output-file', help='Save output to file')
-def assistants_glossary(assistant_name: str, korrektur: Optional[str], begriffe: Optional[str],
-                       output_format: str, output_file: Optional[str]):
-    """Generate philosophical glossary from text or concepts."""
-    try:
-        # Validate request
-        if not korrektur and not begriffe:
-            click.echo("❌ Either --korrektur or --begriffe must be provided", err=True)
-            return
-        
-        # Import the assistant manager
-        sys.path.insert(0, PROJECT_ROOT)
-        from assistants.deepseek_assistant_manager import DeepSeekAssistantManager as PineconeAssistantManager
-        
-        manager = PineconeAssistantManager()
-        
-        # Verify assistant exists
-        if assistant_name not in manager.assistant_configs:
-            click.echo(f"❌ Assistant {assistant_name} not found", err=True)
-            return
-        
-        config = manager.assistant_configs[assistant_name]
-        
-        click.echo(f"📚 Generating glossary with {config['name']}...")
-        if korrektur:
-            click.echo(f"📝 From text: {korrektur[:100]}...")
-        if begriffe:
-            click.echo(f"🎯 Concepts: {begriffe}")
-        
-        # Generate glossary prompt
-        if korrektur:
-            text_to_process = korrektur
-        else:
-            # Create a text from provided concepts
-            begriff_list = [b.strip() for b in begriffe.split(',')]
-            text_to_process = f"Key philosophical concepts: {', '.join(begriff_list)}"
-        
-        prompt = f"""Erstelle ein philosophisches Glossar aus der Sicht deiner Weltanschauung ({config['worldview']}) für folgenden Text:
-
-{text_to_process}
-
-Extrahiere die wichtigsten philosophischen Begriffe und erkläre sie aus deiner Weltanschauung heraus.
-
-Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
-
-{{
-    "glossar": [
-        {{
-            "begriff": "Begriff 1",
-            "beschreibung": "Erklärung aus deiner Weltanschauung"
-        }},
-        {{
-            "begriff": "Begriff 2", 
-            "beschreibung": "Erklärung aus deiner Weltanschauung"
-        }}
-    ]
-}}
-
-Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
-        
-        # Query assistant
-        response = manager.query_assistant(
-            assistant_id=assistant_name,
-            user_message=prompt,
-            use_knowledge_base=True
-        )
-        
-        # Parse JSON response
-        try:
-            import re
-            json_match = re.search(r'\{.*\}', response["message"], re.DOTALL)
-            if json_match:
-                parsed = json.loads(json_match.group())
-                
-                if output_format == 'table':
-                    click.echo(f"\n📚 Glossary by {config['name']} ({config['worldview']}):")
-                    click.echo("-" * 80)
-                    glossary = parsed.get('glossar', [])
-                    for term in glossary:
-                        begriff = term.get('begriff', 'Unknown')
-                        beschreibung = term.get('beschreibung', 'No description')
-                        click.echo(f"\n🔖 {begriff}")
-                        click.echo(f"   {beschreibung}")
-                    click.echo(f"\n⏱️  Processing time: {response['processing_time']:.2f}s")
-                    click.echo(f"💰 Cost: ${response['usage']['cost']:.6f}")
-                
-                else:  # json
-                    result = {
-                        **parsed,
-                        "assistant_id": assistant_name,
-                        "assistant_name": config['name'],
-                        "weltanschauung": config['worldview'],
-                        "processing_time": response['processing_time'],
-                        "cost": response['usage']['cost'],
-                        "original_request": {
-                            "korrektur": korrektur,
-                            "begriffe": begriffe.split(',') if begriffe else None
-                        }
-                    }
-                    output = json.dumps(result, indent=2, ensure_ascii=False)
-                    click.echo(output)
-                    
-            else:
-                click.echo("❌ Could not parse JSON response from assistant")
-                click.echo(f"Raw response: {response['message']}")
-                
-        except Exception as e:
-            click.echo(f"❌ Error parsing response: {e}")
-            click.echo(f"Raw response: {response['message']}")
-        
-        # Save to file if requested
-        if output_file and json_match:
-            with open(output_file, 'w', encoding='utf-8') as f:
-                if output_format == 'json':
-                    result = {
-                        **parsed,
-                        "assistant_id": assistant_name,
-                        "assistant_name": config['name'],
-                        "weltanschauung": config['worldview'],
-                        "processing_time": response['processing_time'],
-                        "cost": response['usage']['cost'],
-                        "original_request": {
-                            "korrektur": korrektur,
-                            "begriffe": begriffe.split(',') if begriffe else None
-                        }
-                    }
-                    json.dump(result, f, indent=2, ensure_ascii=False)
-                else:  # table
-                    f.write(f"Glossary by {config['name']} ({config['worldview']}):\n")
-                    f.write("-" * 80 + "\n")
-                    glossary = parsed.get('glossar', [])
-                    for term in glossary:
-                        begriff = term.get('begriff', 'Unknown')
-                        beschreibung = term.get('beschreibung', 'No description')
-                        f.write(f"\n{begriff}\n")
-                        f.write(f"   {beschreibung}\n")
-                    f.write(f"\nProcessing time: {response['processing_time']:.2f}s\n")
-                    f.write(f"Cost: ${response['usage']['cost']:.6f}\n")
-            
-            click.echo(f"💾 Output saved to {output_file}")
-        
-    except Exception as e:
-        click.echo(f"❌ Error generating glossary: {str(e)}", err=True)
-        sys.exit(1)
 
 if __name__ == '__main__':
     cli() 
