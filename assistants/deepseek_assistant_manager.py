@@ -418,7 +418,8 @@ class DeepSeekAssistantManager:
         chat_history: List[Dict[str, str]] = None,
         use_knowledge_base: bool = True,
         temperature: float = None,
-        debug_mode: bool = False
+        debug_mode: bool = False,
+        model_override: str = None
     ) -> Dict[str, Any]:
         """Query assistant using hybrid approach: Pinecone search + DeepSeek LLM."""
         start_time = time.time()
@@ -436,12 +437,14 @@ class DeepSeekAssistantManager:
             # Use assistant's temperature if not overridden
             actual_temperature = temperature if temperature is not None else config.get("temperature", 0.7)
             actual_max_tokens = config.get("max_tokens", 2000)
+            actual_model = model_override if model_override is not None else config.get("model", "deepseek-reasoner")
             
             # Debug logging if enabled
             debug_enabled = debug_mode or config.get("debug_logging", False) or self.development_mode
             if debug_enabled:
                 logger.info(f"[DEBUG] Assistant: {assistant_id} ({config.get('name', 'Unknown')})")
                 logger.info(f"[DEBUG] Worldview: {worldview}")
+                logger.info(f"[DEBUG] Model: {actual_model} {'(overridden)' if model_override else '(default)'}")
                 logger.info(f"[DEBUG] Temperature: {actual_temperature}")
                 logger.info(f"[DEBUG] Max tokens: {actual_max_tokens}")
                 logger.info(f"[DEBUG] User message: {user_message[:100]}...")
@@ -483,7 +486,7 @@ class DeepSeekAssistantManager:
             
             # Call DeepSeek API
             response = self.client.chat.completions.create(
-                model=config["model"],
+                model=actual_model,
                 messages=messages,
                 temperature=actual_temperature,
                 max_tokens=actual_max_tokens
@@ -526,7 +529,7 @@ class DeepSeekAssistantManager:
                     "total_tokens": usage.total_tokens,
                     "cost": total_cost
                 },
-                "model": config["model"],
+                "model": actual_model,
                 "processing_time": processing_time,
                 "assistant_id": assistant_id,
                 "worldview": worldview

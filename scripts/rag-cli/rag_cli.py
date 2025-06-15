@@ -1924,17 +1924,86 @@ Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."
                                     
                                     click.echo(f"📚 {len(rag_data)} relevante Quellen aus RAG gefunden")
                                     
-                                    # Calculate totals for display
-                                    total_processing_time = response['processing_time'] + resolve_response['processing_time']
-                                    total_cost = response['usage']['cost'] + resolve_response['usage']['cost']
+                                    # Step 3: Modernize the original gedanke for contemporary readers
+                                    click.echo(f"\n🔄 Schritt 3: Modernisierung für heutige Leser...")
+                                    
+                                    # Create citations summary for context
+                                    citations_summary = "\n".join([
+                                        f"- {citation.get('text', '')[:200]}..." 
+                                        for citation in rag_data[:3]
+                                    ]) if rag_data else "Keine spezifischen Quellen verfügbar."
+                                    
+                                    # Create modernization prompt
+                                    modernize_prompt = f"""Du bist ein Experte der philosophischen Weltanschauung {matching_config['worldview']}. 
+
+Reformuliere folgenden authentischen philosophischen Text in eine moderne, zugängliche Sprache für heutige Leser. Behalte den charakteristischen philosophischen Ton und die komplette Essenz bei, aber mache ihn verständlicher und zeitgemäßer.
+
+Ursprünglicher philosophischer Text:
+** {template_result.get('gedanke', '')} **
+
+Relevante philosophische Quellen zur Orientierung:
+{citations_summary}
+
+Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
+
+{{
+    "gedanke": "Moderne, zugängliche Reformulierung die den gleichen philosophischen Inhalt und Charakter behält, aber in heutiger Sprache verständlicher ist",
+    "gedanke_kurz": "Kurze Zusammenfassung der modernen Fassung in 30-35 Worten"
+}}
+
+Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
+                                    
+                                    # Query assistant with deepseek-chat model for modernization
+                                    try:
+                                        modernize_response = manager.query_assistant(
+                                            assistant_id=matching_assistant,
+                                            user_message=modernize_prompt,
+                                            use_knowledge_base=False,  # Already have RAG context
+                                            model_override="deepseek-chat"  # Use chat model for reformulation
+                                        )
+                                        
+                                        # Parse modernization response
+                                        modern_json_match = re.search(r'\{.*\}', modernize_response["message"], re.DOTALL)
+                                        if modern_json_match:
+                                            modern_result = json.loads(modern_json_match.group())
+                                            modernization_success = True
+                                        else:
+                                            click.echo("⚠️ Modernisierung fehlgeschlagen - verwende originale Version")
+                                            modern_result = {
+                                                "gedanke": template_result.get('gedanke', ''),
+                                                "gedanke_kurz": template_result.get('gedanke_kurz', template_result.get('gedanke_zusammenfassung', ''))
+                                            }
+                                            modernization_success = False
+                                            modernize_response = {"processing_time": 0, "usage": {"cost": 0}}
+                                            
+                                    except Exception as e:
+                                        click.echo(f"⚠️ Modernisierung fehlgeschlagen ({str(e)}) - verwende originale Version")
+                                        modern_result = {
+                                            "gedanke": template_result.get('gedanke', ''),
+                                            "gedanke_kurz": template_result.get('gedanke_kurz', template_result.get('gedanke_zusammenfassung', ''))
+                                        }
+                                        modernization_success = False
+                                        modernize_response = {"processing_time": 0, "usage": {"cost": 0}}
+                                    
+                                    # Calculate totals for display including modernization
+                                    total_processing_time = (response['processing_time'] + 
+                                                           resolve_response['processing_time'] + 
+                                                           modernize_response.get('processing_time', 0))
+                                    total_cost = (response['usage']['cost'] + 
+                                                resolve_response['usage']['cost'] + 
+                                                modernize_response.get('usage', {}).get('cost', 0))
                                     
                                     # Display result
                                     click.echo(f"\n✅ Korrektur von {matching_config['name']} ({matching_config['worldview']}):")
                                     click.echo("=" * 80)
-                                    click.echo(f"💡 Korrektur: {template_result.get('gedanke', 'N/A')}")
-                                    click.echo(f"\n📝 Zusammenfassung: {template_result.get('gedanke_kurz', template_result.get('gedanke_zusammenfassung', 'N/A'))}")
+                                    click.echo(f"📜 Originale Korrektur: {template_result.get('gedanke', 'N/A')}")
+                                    click.echo(f"\n🌟 Moderne Fassung: {modern_result.get('gedanke', 'N/A')}")
+                                    click.echo(f"\n📝 Original Zusammenfassung: {template_result.get('gedanke_kurz', template_result.get('gedanke_zusammenfassung', 'N/A'))}")
+                                    click.echo(f"\n✨ Moderne Zusammenfassung: {modern_result.get('gedanke_kurz', 'N/A')}")
                                     click.echo(f"\n👶 Für Kinder: {template_result.get('gedanke_einfach', template_result.get('gedanke_kind', 'N/A'))}")
-                                    click.echo(f"\n🤖 Model: {resolve_response.get('model', matching_config.get('model', 'unknown'))}")
+                                    click.echo(f"\n🤖 Original Model: {resolve_response.get('model', matching_config.get('model', 'unknown'))}")
+                                    if modernization_success:
+                                        click.echo(f"🎨 Modernization Model: {modernize_response.get('model', 'deepseek-chat')}")
                                     click.echo(f"📚 Pinecone Quellen: {len(rag_data)} verwendet")
                                     if rag_data:
                                         # Show source summary
@@ -2094,11 +2163,17 @@ Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."
                                                         "ausgangsgedanke": gedanke,
                                                         "ausgangsgedanke_in_weltanschauung": chosen_reformulation,
                                                         "id": str(uuid.uuid4()),
-                                                        "gedanke": template_result.get('gedanke', 'N/A'),
+                                                        "gedanke": modern_result.get('gedanke', 'N/A'),  # Modern version
+                                                        "gedanke_original": template_result.get('gedanke', 'N/A'),  # Authentic version
                                                         "gedanke_einfach": template_result.get('gedanke_einfach', template_result.get('gedanke_kind', 'N/A')),
-                                                        "gedanke_kurz": template_result.get('gedanke_kurz', template_result.get('gedanke_zusammenfassung', 'N/A')),
+                                                        "gedanke_kurz": modern_result.get('gedanke_kurz', 'N/A'),  # Modern short version
+                                                        "gedanke_original_kurz": template_result.get('gedanke_kurz', template_result.get('gedanke_zusammenfassung', 'N/A')),  # Original short version
                                                         "nummer": selected_fehler['nummer'],
-                                                        "model": f"gedankenfehler-umkehren-rag-cli-{resolve_response.get('model', matching_config.get('model', 'unknown'))}",
+                                                        "model": f"gedankenfehler-umkehren-rag-cli-{matching_config.get('model', 'unknown')}",
+                                                        "actual_model_used": resolve_response.get('model', matching_config.get('model', 'unknown')),
+                                                        "modernization_model": f"gedankenfehler-umkehren-rag-cli-{modernize_response.get('model', 'deepseek-chat')}" if modernization_success else None,
+                                                        "modernization_actual_model": modernize_response.get('model', 'deepseek-chat') if modernization_success else None,
+                                                        "modernization_success": modernization_success,
                                                         "rank": chosen_rank,
                                                         "stichwort": selected_fehler['stichwort'],
                                                         "aspekt": aspekt if aspekt else None,
