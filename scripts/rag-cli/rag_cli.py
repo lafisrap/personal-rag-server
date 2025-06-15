@@ -1954,34 +1954,26 @@ Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."
                                         try:
                                             decision = click.prompt('Wählen Sie eine Option (1-3)', type=int)
                                             if decision == 1:
-                                                # Save to file (using already calculated totals)
-                                                result_data = {
-                                                    "timestamp": datetime.now().isoformat(),
-                                                    "ausgewaehlter_gedankenfehler": {
-                                                        "nummer": selected_fehler['nummer'],
-                                                        "stichwort": selected_fehler['stichwort'],
-                                                        "text": gedanke
-                                                    },
-                                                    "gewaehlte_umformulierung": chosen_reformulation,
-                                                    "weltanschauung": matching_config['worldview'],
-                                                    "assistent": matching_config['name'],
-                                                    "model": resolve_response.get('model', matching_config.get('model', 'unknown')),
-                                                    "aspekt": aspekt if aspekt else None,
-                                                    "korrektur": template_result,
-                                                    "rag_result": rag_data,
-                                                    "gesamte_verarbeitungszeit": total_processing_time,
-                                                    "gesamte_kosten": total_cost
-                                                }
-                                                
-                                                # Save to JSON file
-                                                json_filename = 'tmp-gedanke.json'
-                                                with open(json_filename, 'w', encoding='utf-8') as f:
-                                                    json.dump(result_data, f, indent=2, ensure_ascii=False)
-                                                
-                                                click.echo(f"\n💾 Ergebnis wurde in '{json_filename}' gespeichert.")
-                                                
                                                 # Also save to output file if requested
                                                 if output_file:
+                                                    result_data = {
+                                                        "timestamp": datetime.now().isoformat(),
+                                                        "ausgewaehlter_gedankenfehler": {
+                                                            "nummer": selected_fehler['nummer'],
+                                                            "stichwort": selected_fehler['stichwort'],
+                                                            "text": gedanke
+                                                        },
+                                                        "gewaehlte_umformulierung": chosen_reformulation,
+                                                        "weltanschauung": matching_config['worldview'],
+                                                        "assistent": matching_config['name'],
+                                                        "model": resolve_response.get('model', matching_config.get('model', 'unknown')),
+                                                        "aspekt": aspekt if aspekt else None,
+                                                        "korrektur": template_result,
+                                                        "rag_result": rag_data,
+                                                        "gesamte_verarbeitungszeit": total_processing_time,
+                                                        "gesamte_kosten": total_cost
+                                                    }
+                                                    
                                                     with open(output_file, 'w', encoding='utf-8') as f:
                                                         if output_format == 'json':
                                                             json.dump(result_data, f, indent=2, ensure_ascii=False)
@@ -2000,7 +1992,142 @@ Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."
                                                     
                                                     click.echo(f"💾 Zusätzlich gespeichert in '{output_file}'.")
                                                 
-                                                click.echo(f"✅ Umformulierung und Korrektur erfolgreich abgeschlossen.")
+                                                # Database connection and insertion
+                                                try:
+                                                    from pymongo import MongoClient
+                                                    import uuid
+                                                    
+                                                    # Database connection
+                                                    mongodb_uri = "mongodb+srv://lafisrap:iRyZyiAK3uaXi0ee@ai-cluster-one.m1w8j.mongodb.net/12_weltanschauungen"
+                                                    client = MongoClient(mongodb_uri)
+                                                    db = client['12_weltanschauungen']
+                                                    
+                                                    # Author mappings
+                                                    authors = {
+                                                        "Dynamismus": "Ariadne Ikarus Nietzsche",
+                                                        "Idealismus": "Aurelian I. Schelling", 
+                                                        "Individualismus": "Amara Illias Leibniz",
+                                                        "Materialismus": "Aloys I. Freud",
+                                                        "Mathematismus": "Arcadius Ikarus Torvalds",
+                                                        "Phänomenalismus": "Aetherius Imaginaris Goethe",
+                                                        "Pneumatismus": "Aurelian Irenicus Novalis",
+                                                        "Psychismus": "Archetype Intuitionis Fichte",
+                                                        "Rationalismus": "Aristoteles Isaak Herder",
+                                                        "Realismus": "Arvid I. Steiner",
+                                                        "Sensualismus": "Apollo Ikarus Schiller",
+                                                        "Spiritualismus": "Amara I. Steiner"
+                                                    }
+                                                    
+                                                    # Check existing entries for this nummer/weltanschauung
+                                                    existing_entries = list(db.gedanken.find({
+                                                        "nummer": selected_fehler['nummer'],
+                                                        "weltanschauung": matching_config['worldview']
+                                                    }).sort("rank", 1))
+                                                    
+                                                    if existing_entries:
+                                                        click.echo(f"\n📋 Bestehende Einträge für Nummer {selected_fehler['nummer']} in {matching_config['worldview']}:")
+                                                        for i, entry in enumerate(existing_entries, 1):
+                                                            gedanke_preview = entry.get('gedanke', '')[:100] + '...' if len(entry.get('gedanke', '')) > 100 else entry.get('gedanke', '')
+                                                            click.echo(f"  {i}. Rank {entry.get('rank', '?')}: {gedanke_preview}")
+                                                    
+                                                    # Ask for prioritization
+                                                    click.echo(f"\n💭 Wie möchten Sie den neuen Eintrag priorisieren?")
+                                                    if existing_entries:
+                                                        click.echo(f"1. Als höchste Priorität (Rank 1) - alle anderen Ränge nach unten verschieben")
+                                                        click.echo(f"2. Als niedrigste Priorität (Rank {len(existing_entries) + 1})")
+                                                        click.echo(f"3. Spezifischen Rang wählen (1-{len(existing_entries) + 1})")
+                                                        
+                                                        while True:
+                                                            try:
+                                                                priority_choice = click.prompt('Wählen Sie eine Option (1-3)', type=int)
+                                                                if priority_choice == 1:
+                                                                    chosen_rank = 1
+                                                                    adjust_ranks = True
+                                                                    break
+                                                                elif priority_choice == 2:
+                                                                    chosen_rank = len(existing_entries) + 1
+                                                                    adjust_ranks = False
+                                                                    break
+                                                                elif priority_choice == 3:
+                                                                    chosen_rank = click.prompt(f'Spezifischen Rang eingeben (1-{len(existing_entries) + 1})', type=int)
+                                                                    if 1 <= chosen_rank <= len(existing_entries) + 1:
+                                                                        adjust_ranks = chosen_rank <= len(existing_entries)
+                                                                        break
+                                                                    else:
+                                                                        click.echo(f"❌ Bitte geben Sie einen Rang zwischen 1 und {len(existing_entries) + 1} ein.")
+                                                                else:
+                                                                    click.echo("❌ Ungültige Auswahl. Bitte wählen Sie 1-3.")
+                                                            except (ValueError, TypeError):
+                                                                click.echo("❌ Bitte geben Sie eine gültige Zahl ein.")
+                                                            except click.Abort:
+                                                                click.echo("\n❌ Vorgang abgebrochen.")
+                                                                return
+                                                    else:
+                                                        # No existing entries, this will be rank 1
+                                                        chosen_rank = 1
+                                                        adjust_ranks = False
+                                                        click.echo(f"📝 Kein bestehender Eintrag gefunden. Neuer Eintrag wird als Rank 1 gespeichert.")
+                                                    
+                                                    # Adjust existing ranks if needed
+                                                    if adjust_ranks:
+                                                        click.echo(f"\n🔄 Adjusting existing ranks...")
+                                                        for entry in existing_entries:
+                                                            if entry['rank'] >= chosen_rank:
+                                                                new_rank = entry['rank'] + 1
+                                                                db.gedanken.update_one(
+                                                                    {"_id": entry["_id"]},
+                                                                    {"$set": {"rank": new_rank}}
+                                                                )
+                                                                click.echo(f"   • Entry {entry.get('gedanke', '')[:50]}... : Rank {entry['rank']} → {new_rank}")
+                                                    
+                                                    # Get author info
+                                                    autor = authors[matching_config['worldview']]
+                                                    autor_info = db.autoren.find_one({"name": autor})
+                                                    autor_id = autor_info.get("id") if autor_info else "unknown"
+                                                    
+                                                    # Create database entry
+                                                    db_entry = {
+                                                        "autor": autor,
+                                                        "autorId": autor_id,
+                                                        "weltanschauung": matching_config['worldview'],
+                                                        "created_at": datetime.now(),
+                                                        "ausgangsgedanke": gedanke,
+                                                        "ausgangsgedanke_in_weltanschauung": chosen_reformulation,
+                                                        "id": str(uuid.uuid4()),
+                                                        "gedanke": template_result.get('gedanke', 'N/A'),
+                                                        "gedanke_einfach": template_result.get('gedanke_einfach', template_result.get('gedanke_kind', 'N/A')),
+                                                        "gedanke_kurz": template_result.get('gedanke_kurz', template_result.get('gedanke_zusammenfassung', 'N/A')),
+                                                        "nummer": selected_fehler['nummer'],
+                                                        "model": f"gedankenfehler-umkehren-rag-cli-{resolve_response.get('model', matching_config.get('model', 'unknown'))}",
+                                                        "rank": chosen_rank,
+                                                        "stichwort": selected_fehler['stichwort'],
+                                                        "aspekt": aspekt if aspekt else None,
+                                                        "rag_citations": rag_data,
+                                                        "processing_time": total_processing_time,
+                                                        "cost": total_cost
+                                                    }
+                                                    
+                                                    # Insert into database
+                                                    result = db.gedanken.insert_one(db_entry)
+                                                    
+                                                    if result.inserted_id:
+                                                        click.echo(f"\n✅ Erfolgreich in Datenbank gespeichert:")
+                                                        click.echo(f"   🏷️  Nummer: {selected_fehler['nummer']}")
+                                                        click.echo(f"   🌍 Weltanschauung: {matching_config['worldview']}")
+                                                        click.echo(f"   📊 Rank: {chosen_rank}")
+                                                        click.echo(f"   👤 Autor: {autor}")
+                                                        click.echo(f"   🆔 ID: {db_entry['id']}")
+                                                        click.echo(f"   📚 RAG Quellen: {len(rag_data)}")
+                                                        click.echo(f"   🤖 Model: {db_entry['model']}")
+                                                    else:
+                                                        click.echo(f"❌ Fehler beim Speichern in der Datenbank")
+                                                    
+                                                    client.close()
+                                                    
+                                                except Exception as e:
+                                                    click.echo(f"❌ Fehler bei der Datenbank-Operation: {str(e)}")
+                                                
+                                                click.echo(f"\n✅ Umformulierung und Korrektur erfolgreich abgeschlossen.")
                                                 click.echo(f"📊 Gesamt: {total_processing_time:.2f}s, ${total_cost:.6f}")
                                                 return
                                                 
