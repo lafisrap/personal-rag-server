@@ -1551,7 +1551,9 @@ def assistants_gedanke_umkehren(weltanschauung: str, gedanke: str, aspekt: Optio
         # Step 1: Reformulate the gedanke first (without aspekt)
         click.echo(f"\n🔄 Schritt 1: Umformulierung des Gedankens...")
         
-        reformulate_prompt = f"""Formuliere aus der Sicht deiner Weltanschauung ({matching_config['worldview']}) 3 philosophische Variationen zu folgendem Gedanken:
+        reformulate_prompt = f"""Gebe drei Varianten von folgendem Gedanken aus der Sicht deiner Weltanschauung ({matching_config['worldview']}), aber weise nicht direkt auf die Weltanschauung hin. Ändere nicht die Perspektive. Verwende dabei deine eigene Sprache und deinen typischen Ton.
+
+WICHTIG: Sollte der Gedanke einen Gedankenfehler enthalten, erhalte diesen möglichst treu, auch wenn du anderer Meinung bist. Korrigiere den Gedankenfehler NICHT in diesem Schritt - das kommt später. Formuliere nur um, ohne den Kern des Gedankenfehlers zu verändern.
 
 Gedanke: {gedanke}
 
@@ -1559,9 +1561,9 @@ Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgend
 
 {{
     "gedanken_in_weltanschauung": [
-        "Erste Variation des Gedankens",
-        "Zweite Variation des Gedankens", 
-        "Dritte Variation des Gedankens"
+        "Erste Umformulierung des Gedankens (Gedankenfehler erhalten)",
+        "Zweite Umformulierung des Gedankens (Gedankenfehler erhalten)", 
+        "Dritte Umformulierung des Gedankens (Gedankenfehler erhalten)"
     ],
     "gedanke": "{gedanke}"
 }}
@@ -1811,7 +1813,9 @@ def assistants_gedankenfehler_umkehren(weltanschauung: str,
         click.echo(f"🏷️  Stichwort: {stichwort}")
         
         # Generate reformulate prompt  
-        prompt = f"""Formuliere aus der Sicht deiner Weltanschauung ({matching_config['worldview']}) 3 philosophische Variationen zu folgendem Gedanken:
+        prompt = f"""Gebe drei Varianten von folgendem Gedanken aus der Sicht deiner Weltanschauung ({matching_config['worldview']}), aber weise nicht direkt auf die Weltanschauung hin. Ändere nicht die Perspektive. Verwende dabei deine eigene Sprache und deinen typischen Ton.
+
+WICHTIG: Sollte der Gedanke einen Gedankenfehler enthalten, erhalte diesen möglichst treu, auch wenn du anderer Meinung bist. Korrigiere den Gedankenfehler NICHT in diesem Schritt - das kommt später. Formuliere nur um, ohne den Kern des Gedankenfehlers zu verändern.
 
 Gedanke: {gedanke}
 
@@ -1819,9 +1823,9 @@ Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgend
 
 {{
     "gedanken_in_weltanschauung": [
-        "Erste Variation des Gedankens",
-        "Zweite Variation des Gedankens", 
-        "Dritte Variation des Gedankens"
+        "Erste Umformulierung des Gedankens (Gedankenfehler erhalten)",
+        "Zweite Umformulierung des Gedankens (Gedankenfehler erhalten)", 
+        "Dritte Umformulierung des Gedankens (Gedankenfehler erhalten)"
     ],
     "gedanke": "{gedanke}"
 }}
@@ -1891,12 +1895,14 @@ Korrigiere folgenden kulturgewordenen Gedankenfehler:
 
 {f"Berücksichtige dabei: {aspekt}" if aspekt else ""}
 
+WICHTIG: Formuliere die Korrektur direkt als philosophische Position aus deiner Weltanschauung heraus. Verwende KEINE Bezüge auf den ursprünglichen Gedanken wie "Der Gedanke verkennt", "Das ist falsch", "Im Gegensatz dazu" oder ähnliche Metakommentare. Stelle stattdessen direkt die korrekte philosophische Sichtweise dar.
+
 Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
 
 {{
-    "gedanke": "300-Wort-Korrektur aus deiner philosophischen Perspektive",
-    "gedanke_kurz": "Kurze Zusammenfassung in 30-35 Worten",
-    "gedanke_einfach": "Kinderfreundliche Erklärung für 10-Jährige"
+    "gedanke": "300-Wort-Korrektur als direkte philosophische Position ohne Bezug auf den ursprünglichen Gedanken",
+    "gedanke_kurz": "Kurze Zusammenfassung in 30-35 Worten ohne Metabezüge",
+    "gedanke_einfach": "Kinderfreundliche Erklärung für 10-Jährige ohne Bezug auf den Fehler"
 }}
 
 Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
@@ -1944,11 +1950,13 @@ Ursprünglicher philosophischer Text:
 Relevante philosophische Quellen zur Orientierung:
 {citations_summary}
 
+WICHTIG: Formuliere die moderne Fassung direkt als philosophische Position. Verwende KEINE Bezüge auf den ursprünglichen Text wie "Der Text zeigt", "Daraus folgt", "Im Gegensatz dazu" oder ähnliche Metakommentare. Stelle stattdessen direkt die philosophische Sichtweise in moderner Sprache dar.
+
 Bitte antworte mit einem **gültigen und kommentarlosen JSON-Objekt** im folgenden Format:
 
 {{
-    "gedanke": "Moderne, zugängliche Reformulierung die den gleichen philosophischen Inhalt und Charakter behält, aber in heutiger Sprache verständlicher ist",
-    "gedanke_kurz": "Kurze Zusammenfassung der modernen Fassung in 30-35 Worten"
+    "gedanke": "Moderne, zugängliche Reformulierung als direkte philosophische Position ohne Metabezüge zum ursprünglichen Text",
+    "gedanke_kurz": "Kurze Zusammenfassung der modernen Fassung in 30-35 Worten ohne Metabezüge"
 }}
 
 Stelle sicher, dass wirklich nur der Text des JSON-Objekts zurückgegeben wird."""
